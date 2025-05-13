@@ -1,4 +1,5 @@
-from PyQt6.QtWidgets import QMainWindow, QLabel, QVBoxLayout, QWidget, QScrollArea
+from PyQt6.QtWidgets import (QMainWindow, QLabel, QVBoxLayout, QWidget, QScrollArea,
+                             QPushButton, QHBoxLayout, QApplication)
 from PyQt6.QtCore import Qt
 
 class ResultsWindow(QMainWindow):
@@ -20,8 +21,20 @@ class ResultsWindow(QMainWindow):
         # Create results label
         self.results_label = QLabel()
         self.results_label.setWordWrap(True)
+        self.results_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse |
+            Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
         self.results_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(self.results_label)
+        
+        # Add copy button
+        button_layout = QHBoxLayout()
+        copy_button = QPushButton('Copy Results')
+        copy_button.clicked.connect(self.copy_results)
+        button_layout.addStretch()
+        button_layout.addWidget(copy_button)
+        layout.addLayout(button_layout)
     
     def update_results(self, results):
         """Update the results display."""
@@ -43,3 +56,9 @@ class ResultsWindow(QMainWindow):
         text += f"Specific charge: {abs(specific_charge_avg - 1.758e11)/1.758e11*100:.1f}%"
         
         self.results_label.setText(text)
+        self._current_text = text  # Store the text for copying
+        
+    def copy_results(self):
+        """Copy results to clipboard."""
+        clipboard = QApplication.clipboard()
+        clipboard.setText(self._current_text)

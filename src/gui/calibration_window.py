@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
                             QPushButton, QLabel, QDoubleSpinBox, QTableWidget,
-                            QTableWidgetItem, QMessageBox)
+                            QTableWidgetItem, QMessageBox, QFileDialog)
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
@@ -63,6 +63,14 @@ class CalibrationWindow(QMainWindow):
         self.ax = self.figure.add_subplot(111)
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
+        
+        # Add save plot button
+        button_layout = QHBoxLayout()
+        save_button = QPushButton('Save Plot')
+        save_button.clicked.connect(self.save_plot)
+        button_layout.addStretch()
+        button_layout.addWidget(save_button)
+        layout.addLayout(button_layout)
         
         # Calibration status
         self.status_label = QLabel('No calibration data')
@@ -127,6 +135,17 @@ class CalibrationWindow(QMainWindow):
             self.ax.legend()
             
         self.canvas.draw()
+        
+    def save_plot(self):
+        """Save the calibration plot as an image file."""
+        file_name, _ = QFileDialog.getSaveFileName(
+            self,
+            'Save Calibration Plot',
+            '',
+            'PNG Files (*.png);;PDF Files (*.pdf);;All Files (*)',
+        )
+        if file_name:
+            self.figure.savefig(file_name, dpi=300, bbox_inches='tight')
     
     def get_field_for_current(self, current):
         """Convert current to magnetic field in Tesla using calibration."""
