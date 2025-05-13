@@ -1,11 +1,21 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-                               QPushButton, QLabel, QFileDialog, QScrollArea,
-                               QGroupBox, QMessageBox, QInputDialog, QDoubleSpinBox)
+import csv
+from PyQt6.QtWidgets import (
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLabel, QFileDialog, QScrollArea,
+    QGroupBox, QMessageBox, QInputDialog, QDoubleSpinBox,
+    QTableWidget, QTableWidgetItem
+)
 from PyQt6.QtCore import Qt, QPoint
-from PyQt6.QtGui import QImage, QPixmap
+from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence
 import cv2
 import numpy as np
-import csv
+from pathlib import Path
+from src.physics.zeeman import ZeemanMeasurement, process_measurement, calculate_bohr_magneton
+import matplotlib.pyplot as plt
+from src.gui.plot_window import PlotWindow
+from src.gui.table_window import TableWindow
+from src.gui.results_window import ResultsWindow
+from src.gui.calibration_window import CalibrationWindow
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -14,6 +24,10 @@ class MainWindow(QMainWindow):
         self.setWindowTitle('Zeeman Effect Analysis')
         self.setGeometry(100, 100, 1200, 800)
         
+        # Add keyboard shortcut for test data
+        self.shortcut_test = QShortcut(QKeySequence('Ctrl+T'), self)
+        self.shortcut_test.activated.connect(self.fill_test_data)
+        
         # Measurement variables
         self.images = []  # List of loaded images with their measurements
         self.current_image_index = -1
@@ -21,8 +35,22 @@ class MainWindow(QMainWindow):
         self.current_mode = None
         self.scale_factor = 1.0
         
-        # Initialize measurement
-        self.initialize_measurement()
+        # Initialize measurement state
+        self.current_mode = None  # 'calibrate', 'center', 'inner', 'middle', 'outer'
+        self.calibration_points = []
+        self.current_measurement = {
+            'center': None,
+            'type': None,
+            'radii': {'inner': None, 'middle': None, 'outer': None}
+        }
+        self.mm_per_pixel = None
+        self.calibration_distance_mm = 10.0  # Default calibration distance
+        
+        # Initialize physics measurements
+        self.measurements = []  # List of ZeemanMeasurement objects
+        
+        # Create calibration window
+        self.calibration_window = CalibrationWindow()
         
         # Create UI
         self.create_ui()
@@ -166,48 +194,86 @@ class MainWindow(QMainWindow):
         results_group = QGroupBox("Results")
         results_layout = QVBoxLayout(results_group)
         
-        # Add input fields for wavelength and magnetic field
-        param_layout = QHBoxLayout()
+        # Parameters layout
+        params_layout = QHBoxLayout()
         
+        # Current and calibration layout
+        current_group = QGroupBox('Magnetic Field')
+        current_group_layout = QVBoxLayout()
+        
+        # Current input
+        current_layout = QHBoxLayout()
+        current_label = QLabel('Current (A):')
+        self.current_input = QDoubleSpinBox()
+        self.current_input.setRange(0, 100)
+        self.current_input.setDecimals(3)
+        self.current_input.setSingleStep(0.1)
+        current_layout.addWidget(current_label)
+        current_layout.addWidget(self.current_input)
+        current_group_layout.addLayout(current_layout)
+        
+        # Calibration button
+        self.calibrate_btn = QPushButton('Calibrate Field')
+        self.calibrate_btn.clicked.connect(self.show_calibration)
+        current_group_layout.addWidget(self.calibrate_btn)
+        
+        current_group.setLayout(current_group_layout)
+        params_layout.addWidget(current_group)
+        
+        # Wavelength input
         wavelength_layout = QVBoxLayout()
-        wavelength_label = QLabel("Wavelength (nm):")
+        wavelength_label = QLabel('Wavelength (nm):')
         self.wavelength_input = QDoubleSpinBox()
-        self.wavelength_input.setRange(0, 1000)
-        self.wavelength_input.setValue(546.1)  # Default wavelength for mercury green line
+        self.wavelength_input.setRange(300, 1000)
         self.wavelength_input.setDecimals(1)
+        self.wavelength_input.setValue(643.8)  # Default wavelength
         wavelength_layout.addWidget(wavelength_label)
         wavelength_layout.addWidget(self.wavelength_input)
-        param_layout.addLayout(wavelength_layout)
+        params_layout.addLayout(wavelength_layout)
         
-        field_layout = QVBoxLayout()
-        field_label = QLabel("Magnetic Field (T):")
-        self.field_input = QDoubleSpinBox()
-        self.field_input.setRange(0, 10)
-        self.field_input.setValue(1.0)  # Default field strength
-        self.field_input.setDecimals(3)
-        field_layout.addWidget(field_label)
-        field_layout.addWidget(self.field_input)
-        param_layout.addLayout(field_layout)
+        results_layout.addLayout(params_layout)
         
-        results_layout.addLayout(param_layout)
+        # Save measurement button
+        self.save_measurement_btn = QPushButton('Save Measurement')
+        self.save_measurement_btn.clicked.connect(self.save_measurement)
+        results_layout.addWidget(self.save_measurement_btn)
         
-        calculate_btn = QPushButton("Calculate Results")
-        calculate_btn.clicked.connect(self.calculate_results)
-        results_layout.addWidget(calculate_btn)
+        # Results buttons layout
+        buttons_layout = QHBoxLayout()
         
-        export_btn = QPushButton("Export Measurements")
-        export_btn.clicked.connect(self.export_measurements)
-        results_layout.addWidget(export_btn)
+        # Calculate button
+        self.calculate_btn = QPushButton('Calculate Results')
+        self.calculate_btn.clicked.connect(self.calculate_results)
+        buttons_layout.addWidget(self.calculate_btn)
         
-        self.results_label = QLabel("")
-        self.results_label.setWordWrap(True)
-        results_scroll = QScrollArea()
-        results_scroll.setWidgetResizable(True)
-        results_scroll.setMinimumHeight(200)
-        results_scroll.setWidget(self.results_label)
-        results_layout.addWidget(results_scroll)
+        # Show plot button
+        self.show_plot_btn = QPushButton('Show Plot')
+        self.show_plot_btn.clicked.connect(self.show_plot)
+        buttons_layout.addWidget(self.show_plot_btn)
+        
+        # Show table button
+        self.show_table_btn = QPushButton('Show Data Table')
+        self.show_table_btn.clicked.connect(self.show_table)
+        buttons_layout.addWidget(self.show_table_btn)
+        
+        # Show results button
+        self.show_results_btn = QPushButton('Show Results')
+        self.show_results_btn.clicked.connect(self.show_results)
+        buttons_layout.addWidget(self.show_results_btn)
+        
+        results_layout.addLayout(buttons_layout)
+        
+        # Export button
+        self.export_btn = QPushButton('Export to CSV')
+        self.export_btn.clicked.connect(self.export_to_csv)
+        results_layout.addWidget(self.export_btn)
         
         results_group.setLayout(results_layout)
+        
+        # Initialize windows
+        self.plot_window = PlotWindow()
+        self.table_window = TableWindow()
+        self.results_window = ResultsWindow()
         # Add control panel to content layout
         control_layout.addWidget(results_group)
         control_layout.addStretch()
@@ -412,53 +478,142 @@ class MainWindow(QMainWindow):
             
             self.update_display()
             self.update_measurements_display()
-        self.update_display()
     
     def set_measurement_mode(self, mode):
         self.current_mode = mode
         if mode == 'center':
             self.initialize_measurement()
     
-    def calculate_scale(self):
+    def save_measurement(self):
+        """Save current measurement with B-field value."""
         if not self.images or self.current_image_index < 0:
+            QMessageBox.warning(self, 'Warning', 'No image loaded')
             return
-
+            
+        if self.current_measurement['center'] is None:
+            QMessageBox.warning(self, 'Warning', 'Please set center point first')
+            return
+            
+        if any(v is None for v in self.current_measurement['radii'].values()):
+            QMessageBox.warning(self, 'Warning', 'Please measure all radii first')
+            return
+            
+        # Get current and convert to magnetic field
+        try:
+            current = self.current_input.value()
+            # Convert current to field using calibration
+            slope, intercept = self.calibration_window.calibration_params
+            field_gauss = slope * current + intercept
+            magnetic_field = field_gauss / 1e4  # Convert Gauss to Tesla
+        except (AttributeError, TypeError):
+            QMessageBox.warning(self, 'Warning', 'Please calibrate the magnetic field first')
+            return
+        
         current_data = self.images[self.current_image_index]
-        if len(current_data['calibration_points']) != 2:
+        if not current_data.get('mm_per_pixel'):
+            QMessageBox.warning(self, 'Warning', 'Please calibrate the image first')
             return
-
-        # Calculate distance in pixels
-        dx = current_data['calibration_points'][1][0] - current_data['calibration_points'][0][0]
-        dy = current_data['calibration_points'][1][1] - current_data['calibration_points'][0][1]
-        pixel_distance = np.sqrt(dx**2 + dy**2)
-
-        # Get real distance in mm from user
-        real_distance, ok = QInputDialog.getDouble(
-            self,
-            'Enter Real Distance',
-            'Enter the real distance in millimeters:',
-            1.0, 0.0, 1000.0, 2
+            
+        # Create measurement object
+        measurement = ZeemanMeasurement(
+            B_field=magnetic_field,
+            R_center=self.current_measurement['radii']['middle'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['middle'] is not None else None,
+            R_inner=self.current_measurement['radii']['inner'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['inner'] is not None else None,
+            R_outer=self.current_measurement['radii']['outer'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['outer'] is not None else None,
+            wavelength=self.wavelength_input.value() * 1e-9  # Convert nm to m
         )
-
-        if ok and pixel_distance > 0:
-            current_data['mm_per_pixel'] = real_distance / pixel_distance
-            self.update_scale_display()
-    
-    def initialize_measurement(self):
-        """Initialize or reset the current measurement and calibration."""
+        
+        # Process measurement
+        measurement = process_measurement(measurement)
+        
+        # Add to measurements list
+        self.measurements.append(measurement)
+        
+        # Update table window
+        self.table_window.update_table(self.measurements)
+        
+        # Clear current measurement
         self.current_measurement = {
             'center': None,
-            'points': [],
-            'radii': {'inner': None, 'middle': None, 'outer': None},
-            'type': None  # 'inner', 'middle', or 'outer'
+            'type': None,
+            'radii': {'inner': None, 'middle': None, 'outer': None}
         }
+        self.update_display()
+        self.update_measurements_display()
+    
+    def show_plot(self):
+        """Show the plot window."""
+        self.plot_window.show()
+        self.plot_window.raise_()
+    
+    def show_table(self):
+        """Show the table window."""
+        self.table_window.show()
+        self.table_window.raise_()
+    
+    def show_results(self):
+        """Show the results window."""
+        self.results_window.show()
+        self.results_window.raise_()
+    
+    def show_calibration(self):
+        """Show the magnetic field calibration window."""
+        self.calibration_window.show()
+        self.calibration_window.raise_()
+    
+    def previous_image(self):
+        """Switch to the previous image."""
+        if self.current_image_index > 0:
+            self.current_image_index -= 1
+            self.initialize_measurement()
+            self.update_display()
+            self.update_navigation()
+            self.update_measurements_display()
+    
+    def next_image(self):
+        """Switch to the next image."""
+        if self.current_image_index < len(self.images) - 1:
+            self.current_image_index += 1
+            self.initialize_measurement()
+            self.update_display()
+            self.update_navigation()
+            self.update_measurements_display()
+    
+    def update_navigation(self):
+        """Update the navigation buttons and image label."""
+        self.prev_image_btn.setEnabled(self.current_image_index > 0)
+        self.next_image_btn.setEnabled(self.current_image_index < len(self.images) - 1)
         
-        # Initialize calibration variables
-        self.calibration_points = []
-        self.mm_per_pixel = None
-        self.calibration_distance_mm = 10.0  # Default calibration distance
+        if self.images and self.current_image_index >= 0:
+            self.image_label.setText(f"Image {self.current_image_index + 1} of {len(self.images)}")
+        else:
+            self.image_label.setText("No image loaded")
+    
+    def initialize_measurement(self):
+        """Initialize or reset the current measurement."""
+        self.current_measurement = {
+            'center': None,
+            'type': None,
+            'radii': {'inner': None, 'middle': None, 'outer': None}
+        }
+    
+    def zoom_in(self):
+        """Zoom in on the image."""
+        self.scale_factor *= 1.2
+        self.update_display()
+    
+    def zoom_out(self):
+        """Zoom out from the image."""
+        self.scale_factor /= 1.2
+        self.update_display()
+    
+    def reset_view(self):
+        """Reset the zoom level."""
+        self.scale_factor = 1.0
+        self.update_display()
     
     def update_scale_display(self):
+        """Update the scale/calibration display."""
         if not self.images or self.current_image_index < 0:
             self.calibration_label.setText("Scale: Not calibrated")
             return
@@ -470,6 +625,7 @@ class MainWindow(QMainWindow):
             self.calibration_label.setText("Scale: Not calibrated")
     
     def update_measurements_display(self):
+        """Update the measurements display."""
         if not self.images or self.current_image_index < 0:
             self.measurements_label.setText("No measurements")
             return
@@ -501,121 +657,31 @@ class MainWindow(QMainWindow):
 
         self.measurements_label.setText(text)
     
-    def zoom_in(self):
-        self.scale_factor *= 1.2
-        self.update_display()
-    
-    def zoom_out(self):
-        self.scale_factor /= 1.2
-        self.update_display()
-    
-    def reset_view(self):
-        self.scale_factor = 1.0
-        self.update_display()
-        
-    def update_navigation(self):
-        """Update the navigation buttons and image label."""
-        self.prev_image_btn.setEnabled(self.current_image_index > 0)
-        self.next_image_btn.setEnabled(self.current_image_index < len(self.images) - 1)
-        
-        if self.current_image_index >= 0:
-            self.image_label.setText(f"Image {self.current_image_index + 1} of {len(self.images)}")
-        else:
-            self.image_label.setText("No image loaded")
-            
-    def previous_image(self):
-        """Switch to the previous image."""
-        if self.current_image_index > 0:
-            self.current_image_index -= 1
-            self.initialize_measurement()
-            self.update_display()
-            self.update_navigation()
-            self.update_measurements_display()
-            
-    def next_image(self):
-        """Switch to the next image."""
-        if self.current_image_index < len(self.images) - 1:
-            self.current_image_index += 1
-            self.initialize_measurement()
-            self.update_display()
-            self.update_navigation()
-            self.update_measurements_display()
-    
     def calculate_results(self):
-        if not self.images:
-            QMessageBox.warning(self, 'Warning', 'No images loaded')
+        """Calculate final results and update all windows."""
+        if not self.measurements:
+            QMessageBox.warning(self, 'Warning', 'No measurements available')
             return
-
-        wavelength = self.wavelength_input.value()  # nm
-        magnetic_field = self.field_input.value()  # Tesla
-
-        # Collect all valid measurements
-        all_measurements = []
-        for img_data in self.images:
-            measurement = img_data.get('measurement')
-            if not measurement:
-                continue
-                
-            radii = measurement.get('radii', {})
-            if not all(radii.get(k) for k in ['inner', 'middle', 'outer']):
-                continue
-                
-            all_measurements.append(radii)
-
-        if not all_measurements:
-            QMessageBox.warning(self, 'Warning', 'No complete measurement sets found')
-            return
-
-        # Calculate results for each complete set
-        results = []
-        for i, m in enumerate(all_measurements, 1):
-            # Calculate wavelength shifts
-            pixel_to_wavelength = wavelength / m['middle']
-            inner_shift = abs(m['inner'] - m['middle']) * pixel_to_wavelength
-            outer_shift = abs(m['outer'] - m['middle']) * pixel_to_wavelength
-
-            # Calculate Bohr magneton
-            bohr_magneton = (inner_shift + outer_shift) * 1e-9 / (4 * magnetic_field)
-
-            # Calculate specific charge
-            specific_charge = bohr_magneton / 9.274e-24  # Divide by standard Bohr magneton
-
-            results.append({
-                'set': i,
-                'inner_shift': inner_shift,
-                'outer_shift': outer_shift,
-                'bohr_magneton': bohr_magneton,
-                'specific_charge': specific_charge
-            })
-
-        # Calculate averages
-        avg_bohr_magneton = np.mean([r['bohr_magneton'] for r in results])
-        avg_specific_charge = np.mean([r['specific_charge'] for r in results])
-        std_bohr_magneton = np.std([r['bohr_magneton'] for r in results])
-        std_specific_charge = np.std([r['specific_charge'] for r in results])
         
-        # Display results
-        text = "Results:\n\n"
-        for r in results:
-            text += f"Set {r['set']}:\n"
-            text += f"Inner shift: {r['inner_shift']:.2f} nm\n"
-            text += f"Outer shift: {r['outer_shift']:.2f} nm\n"
-            text += f"Bohr magneton: {r['bohr_magneton']:.3e} J/T\n"
-            text += f"Specific charge: {r['specific_charge']:.3e} C/kg\n\n"
+        # Calculate Bohr magneton and specific charge
+        results = calculate_bohr_magneton(self.measurements)
         
-        text += "Average values:\n"
-        text += f"Bohr magneton: {avg_bohr_magneton:.3e} ± {std_bohr_magneton:.3e} J/T\n"
-        text += f"Specific charge: {avg_specific_charge:.3e} ± {std_specific_charge:.3e} C/kg"
+        # Update windows
+        self.plot_window.plot_data(self.measurements)
+        self.table_window.update_table(self.measurements)
+        self.results_window.update_results(results)
         
-        self.results_label.setText(text)
-
-    def export_measurements(self):
+        # Show all windows
+        self.show_plot()
+        self.show_table()
+        self.show_results()
+    
+    def export_to_csv(self):
         """Export measurements to a CSV file."""
-        if not self.images:
+        if not self.measurements:
             QMessageBox.warning(self, 'Warning', 'No measurements to export')
             return
             
-        # Get file path from user
         file_path, _ = QFileDialog.getSaveFileName(
             self,
             'Save Measurements',
@@ -625,48 +691,161 @@ class MainWindow(QMainWindow):
         
         if not file_path:
             return
-            
-        magnetic_field = self.field_input.value()
-        wavelength = self.wavelength_input.value()
-        
 
+        # Constants
+        L = 150  # Distance in mm
+        n = 1.46  # Refractive index
+        
         with open(file_path, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Set', 'Inner Radius (px)', 'Middle Radius (px)', 'Outer Radius (px)',
-                           'Inner Radius (mm)', 'Middle Radius (mm)', 'Outer Radius (mm)',
-                           'Bohr Magneton (J/T)', 'Specific Charge (C/kg)'])
+            writer = csv.writer(f, delimiter='\t')
             
-            # Export measurements from each image
-            for i, image in enumerate(self.images, 1):
-                if 'measurement' not in image or not image['measurement']:
-                    continue
-                    
-                m = image['measurement']
-                if not m['radii']['middle']:
-                    continue
-                    
-                # Calculate physical quantities
-                pixel_to_wavelength = wavelength * 1e-9 / m['radii']['middle']
-                delta_lambda_avg = (
-                    abs(m['radii']['inner'] - m['radii']['middle']) +
-                    abs(m['radii']['outer'] - m['radii']['middle'])
-                ) * pixel_to_wavelength / 2
+            # Write header
+            writer.writerow([
+                'I(A)', 'B(G)', 
+                'R_i(mm)', 'R_c(mm)', 'R_o(mm)',
+                'α_i(deg)', 'α_c(deg)', 'α_o(deg)',
+                'β_i(deg)', 'β_c(deg)', 'β_o(deg)',
+                'Δλ_i(nm)', 'Δλ_o(nm)',
+                'ΔE_i(eV)', 'ΔE_o(eV)'
+            ])
+            
+            # Write data
+            for m in self.measurements:
+                # Get magnetic field in Gauss
+                B_field = m.B_field * 1e4  # Convert T to G
                 
-                bohr_magneton = delta_lambda_avg / (4 * magnetic_field)
-                specific_charge = bohr_magneton / 9.274e-24  # Divide by standard Bohr magneton
+                # Get current from magnetic field using calibration
+                try:
+                    slope, intercept = self.calibration_window.calibration_params
+                    current = (B_field - intercept) / slope  # Inverse of B = slope * I + intercept
+                except (AttributeError, TypeError):
+                    QMessageBox.warning(self, 'Warning', 'Please calibrate the magnetic field first')
+                    return
                 
-                # Convert radii to mm
-                radii_mm = {k: v * image.get('mm_per_pixel', 0) if v is not None else 0
-                           for k, v in m['radii'].items()}
+                # Calculate angles
+                def calc_angles(r_mm):
+                    if r_mm is None:
+                        return None, None
+                    alpha = np.arctan(r_mm / L)
+                    beta = np.arcsin(np.sin(alpha) / n)
+                    return alpha, beta
                 
-                writer.writerow([
-                    i,
-                    m['radii']['inner'] or 0,
-                    m['radii']['middle'] or 0,
-                    m['radii']['outer'] or 0,
-                    radii_mm['inner'],
-                    radii_mm['middle'],
-                    radii_mm['outer'],
-                    bohr_magneton,
-                    specific_charge
-                ])
+                # Calculate angles for each radius
+                alpha_i, beta_i = calc_angles(m.R_inner)
+                alpha_c, beta_c = calc_angles(m.R_center)
+                alpha_o, beta_o = calc_angles(m.R_outer)
+                
+                # Format values with appropriate precision
+                def format_val(val, precision=6):
+                    return f"{val:.{precision}f}" if val is not None else ""
+                
+                row = [
+                    format_val(current, 2),  # Convert to A assuming 10000 G/A
+                    format_val(B_field, 2),  # Gauss
+                    format_val(m.R_inner, 3) if m.R_inner else "",
+                    format_val(m.R_center, 3) if m.R_center else "",
+                    format_val(m.R_outer, 3) if m.R_outer else "",
+                    format_val(np.degrees(alpha_i), 4) if alpha_i is not None else "",
+                    format_val(np.degrees(alpha_c), 4) if alpha_c is not None else "",
+                    format_val(np.degrees(alpha_o), 4) if alpha_o is not None else "",
+                    format_val(np.degrees(beta_i), 4) if beta_i is not None else "",
+                    format_val(np.degrees(beta_c), 4) if beta_c is not None else "",
+                    format_val(np.degrees(beta_o), 4) if beta_o is not None else "",
+                    format_val(m.delta_lambda_i * 1e9, 3) if m.delta_lambda_i else "",  # nm
+                    format_val(m.delta_lambda_o * 1e9, 3) if m.delta_lambda_o else "",  # nm
+                    format_val(m.delta_E_i / 1.602176634e-19, 6) if m.delta_E_i else "",  # eV
+                    format_val(m.delta_E_o / 1.602176634e-19, 6) if m.delta_E_o else ""   # eV
+                ]
+                writer.writerow(row)
+                
+            QMessageBox.information(self, 'Success', f'Measurements exported to {file_path}')
+
+    def fill_test_data(self):
+        """Fill test data for quick testing."""
+        # Test data for magnetic field calibration
+        calibration_points = [
+            (0.0, 0),
+            (0.5, 5000),
+            (1.0, 10000),
+            (1.5, 15000),
+            (2.0, 20000)
+        ]
+        
+        # Show calibration window
+        self.calibration_window.show()
+        
+        # Fill calibration data
+        for current, field in calibration_points:
+            self.calibration_window.current_input.setValue(current)
+            self.calibration_window.field_input.setValue(field)
+            self.calibration_window.add_point()
+        
+        # Calculate calibration parameters
+        currents = [point[0] for point in calibration_points]
+        fields = [point[1] for point in calibration_points]
+        coeffs = np.polyfit(currents, fields, 1)
+        self.calibration_window.calibration_params = (coeffs[0], coeffs[1])  # slope, intercept
+        
+        # Update calibration display
+        slope, intercept = self.calibration_window.calibration_params
+        self.calibration_window.status_label.setText(
+            f'Calibration: B = {slope:.1f} * I + {intercept:.1f} (Gauss)'
+        )
+        
+        # Update plot
+        self.calibration_window.update_plot()
+        
+        # Create a test image (black background with white dots)
+        img = np.zeros((480, 640, 3), dtype=np.uint8)
+        center_x, center_y = 320, 240
+        
+        # Add spectral lines for each test case
+        test_cases = [
+            {'current': 0.5, 'radii': (50, 60, 70)},  # Inner, Center, Outer radii in pixels
+            {'current': 1.0, 'radii': (55, 65, 75)},
+            {'current': 1.5, 'radii': (60, 70, 80)},
+            {'current': 2.0, 'radii': (65, 75, 85)}
+        ]
+        
+        for case in test_cases:
+            # Create image with spectral lines
+            test_img = img.copy()
+            for radius in case['radii']:
+                cv2.circle(test_img, (center_x, center_y), radius, (255, 255, 255), 2)
+            
+            # Add image to the list
+            self.images.append({
+                'image': test_img,
+                'mm_per_pixel': 0.1  # 0.1 mm per pixel for testing
+            })
+        
+        # Set first image as current
+        self.current_image_index = 0
+        self.update_display()
+        self.update_navigation()
+        
+        # Take measurements for each test case
+        for i, case in enumerate(test_cases):
+            # Set center point
+            self.current_measurement = {
+                'center': QPoint(center_x, center_y),
+                'type': None,
+                'radii': {'inner': None, 'middle': None, 'outer': None}
+            }
+            
+            # Set radii
+            self.current_measurement['radii']['inner'] = case['radii'][0]
+            self.current_measurement['radii']['middle'] = case['radii'][1]
+            self.current_measurement['radii']['outer'] = case['radii'][2]
+            
+            # Set current value
+            self.current_input.setValue(case['current'])
+            
+            # Save measurement
+            self.save_measurement()
+            
+            # Move to next image if not last
+            if i < len(test_cases) - 1:
+                self.next_image()
+        
+        QMessageBox.information(self, 'Success', 'Test data has been loaded. Press Ctrl+S to save measurements.')
