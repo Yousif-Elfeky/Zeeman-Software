@@ -3,9 +3,10 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QScrollArea,
     QGroupBox, QMessageBox, QInputDialog, QDoubleSpinBox,
-    QTableWidget, QTableWidgetItem
+    QTableWidget, QTableWidgetItem, QApplication
 )
-from PyQt6.QtCore import Qt, QPoint
+from PyQt6.QtCore import Qt, QPoint, QSize
+from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence, QScreen
 from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence
 import cv2
 import numpy as np
@@ -22,7 +23,21 @@ class MainWindow(QMainWindow):
         super().__init__()
         
         self.setWindowTitle('Zeeman Effect Analysis')
-        self.setGeometry(100, 100, 1200, 800)
+        
+        # Get screen size and set window size
+        screen = QApplication.primaryScreen().geometry()
+        self.screen_width = screen.width()
+        self.screen_height = screen.height()
+        
+        # Set window size to 80% of screen size
+        window_width = int(self.screen_width * 0.8)
+        window_height = int(self.screen_height * 0.8)
+        
+        # Center the window
+        x = (self.screen_width - window_width) // 2
+        y = (self.screen_height - window_height) // 2
+        
+        self.setGeometry(x, y, window_width, window_height)
         
         # Add keyboard shortcut for test data
         self.shortcut_test = QShortcut(QKeySequence('Ctrl+T'), self)
@@ -81,7 +96,6 @@ class MainWindow(QMainWindow):
         # Image display in a scroll area
         image_scroll = QScrollArea()
         image_scroll.setWidgetResizable(True)
-        image_scroll.setMinimumSize(800, 600)
         
         image_container = QWidget()
         image_container_layout = QVBoxLayout(image_container)
@@ -93,13 +107,15 @@ class MainWindow(QMainWindow):
         image_container_layout.addStretch()
         
         image_scroll.setWidget(image_container)
-        content_layout.addWidget(image_scroll, 3)  # 3:1 ratio
+        content_layout.addWidget(image_scroll, 60)  # 75% of width
+        content_layout.setStretch(0, 60)  # Image area stretch factor
         
         # Create control panel with scroll area
-        control_scroll = QScrollArea()
-        control_scroll.setWidgetResizable(True)
-        control_scroll.setMinimumWidth(300)
-        control_scroll.setMaximumWidth(400)
+        self.control_scroll = QScrollArea()
+        self.control_scroll.setWidgetResizable(True)
+        # Set control panel width to 1/4 of window width
+        control_width = int(self.width() * 0.4)
+        self.control_scroll.setFixedWidth(control_width)
         
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
@@ -178,14 +194,12 @@ class MainWindow(QMainWindow):
         measurements_group = QGroupBox("Measurements")
         measurements_layout = QVBoxLayout(measurements_group)
         
-        self.measurements_label = QLabel("No measurements")
-        self.measurements_label.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.measurements_label.setWordWrap(True)
-        measurements_scroll = QScrollArea()
-        measurements_scroll.setWidget(self.measurements_label)
-        measurements_scroll.setWidgetResizable(True)
-        measurements_scroll.setMinimumHeight(200)
-        measurements_layout.addWidget(measurements_scroll)
+        # Create table for measurements
+        self.measurements_table = QTableWidget()
+        self.measurements_table.setColumnCount(3)
+        self.measurements_table.setHorizontalHeaderLabels(['Current (A)', 'B Field (T)', 'Actions'])
+        self.measurements_table.horizontalHeader().setStretchLastSection(True)
+        measurements_layout.addWidget(self.measurements_table)
         
         measurements_group.setLayout(measurements_layout)
         control_layout.addWidget(measurements_group)
@@ -278,8 +292,9 @@ class MainWindow(QMainWindow):
         control_layout.addWidget(results_group)
         control_layout.addStretch()
         
-        control_scroll.setWidget(control_panel)
-        content_layout.addWidget(control_scroll)
+        self.control_scroll.setWidget(control_panel)
+        content_layout.addWidget(self.control_scroll, 25)  # 25% of width
+        content_layout.setStretch(1, 25)  # Control panel stretch factor
         
         # Set the central widget
         self.setCentralWidget(central_widget)
@@ -579,6 +594,16 @@ class MainWindow(QMainWindow):
             self.update_navigation()
             self.update_measurements_display()
     
+    def resizeEvent(self, event):
+        """Handle window resize events."""
+        super().resizeEvent(event)
+        # Update control panel width
+        if hasattr(self, 'control_scroll'):
+            control_width = int(self.width() * 0.25)
+            self.control_scroll.setFixedWidth(control_width)
+        # Update display if there's an image
+        self.update_display()
+    
     def update_navigation(self):
         """Update the navigation buttons and image label."""
         self.prev_image_btn.setEnabled(self.current_image_index > 0)
@@ -625,37 +650,49 @@ class MainWindow(QMainWindow):
             self.calibration_label.setText("Scale: Not calibrated")
     
     def update_measurements_display(self):
-        """Update the measurements display."""
-        if not self.images or self.current_image_index < 0:
-            self.measurements_label.setText("No measurements")
-            return
-
-        img_data = self.images[self.current_image_index]
-        text = f"Image {self.current_image_index + 1} of {len(self.images)}\n\n"
-
-        # Show calibration status
-        if img_data.get('mm_per_pixel') is not None:
-            text += f"Calibration: {img_data['mm_per_pixel']:.4f} mm/pixel\n\n"
-            self.calibration_label.setText(f"Scale: {img_data['mm_per_pixel']:.4f} mm/pixel")
-        else:
-            text += "Not calibrated\n\n"
-            self.calibration_label.setText("Scale: Not calibrated")
-
-        # Current measurement
-        if self.current_measurement['center'] is not None:
-            text += "Current measurement:\n"
-            text += "Center point set\n"
-            for radius_type, radius in self.current_measurement['radii'].items():
-                if radius is not None:
-                    radius_mm = radius * (img_data.get('mm_per_pixel', 0) or 0)
-                    text += f"{radius_type.capitalize()} radius: {radius:.1f} px"
-                    if img_data.get('mm_per_pixel'):
-                        text += f" ({radius_mm:.2f} mm)"
-                    text += "\n"
-                else:
-                    text += f"{radius_type.capitalize()} radius: Not measured\n"
-
-        self.measurements_label.setText(text)
+        """Update the measurements table."""
+        self.measurements_table.setRowCount(len(self.measurements))
+        
+        for i, measurement in enumerate(self.measurements):
+            # Get current from B field using calibration
+            try:
+                slope, intercept = self.calibration_window.calibration_params
+                current = (measurement.B_field * 1e4 - intercept) / slope
+            except (AttributeError, TypeError):
+                current = 0
+            
+            # Current
+            current_item = QTableWidgetItem(f"{current:.3f}")
+            current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.measurements_table.setItem(i, 0, current_item)
+            
+            # B Field
+            field_item = QTableWidgetItem(f"{measurement.B_field:.6f}")
+            field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.measurements_table.setItem(i, 1, field_item)
+            
+            # Create delete button
+            delete_btn = QPushButton('Delete')
+            delete_btn.clicked.connect(lambda checked, row=i: self.delete_measurement(row))
+            self.measurements_table.setCellWidget(i, 2, delete_btn)
+        
+        self.measurements_table.resizeColumnsToContents()
+        
+    def delete_measurement(self, index):
+        """Delete a measurement and update displays."""
+        if 0 <= index < len(self.measurements):
+            # Remove the measurement
+            self.measurements.pop(index)
+            
+            # Update displays
+            self.update_measurements_display()
+            self.table_window.update_table(self.measurements)
+            
+            # Update plot if measurements exist
+            if self.measurements:
+                self.plot_window.plot_data(self.measurements)
+            
+            QMessageBox.information(self, 'Success', f'Measurement {index + 1} deleted')
     
     def calculate_results(self):
         """Calculate final results and update all windows."""
