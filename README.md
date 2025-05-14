@@ -8,11 +8,23 @@ This software simplifies the analysis of the Zeeman effect by automating the mea
 
 ## Features
 
-- User-friendly graphical interface
-- Image input from file
+- User-friendly graphical interface with responsive layout
+- Image input from file with preview
 - Automated spectral line analysis
+- Interactive measurement management:
+  - View all measurements in a table
+  - Delete and redo individual measurements
+  - Real-time current and magnetic field display
+- Magnetic field calibration
 - Calculation of Bohr magneton and specific charge
-- Data export as CVS
+- Data visualization:
+  - Interactive plots
+  - Measurement tables
+  - Results summary
+- Export options:
+  - Save plots as PNG/PDF
+  - Export data as CSV
+  - Copy results to clipboard
 
 ## Installation
 
@@ -24,19 +36,31 @@ This software simplifies the analysis of the Zeeman effect by automating the mea
 
 ## Usage
 
-Source the .venv
-```bash
-source .venv/bin/activate
-```
-Run the application:
-```bash
-python src/main.py
-```
+1. Activate the virtual environment:
+   ```bash
+   source .venv/bin/activate
+   ```
 
-1. Load an image of the spectral lines
-2. Input the applied current, the wavelenght, and magnetic field values
-3. Adjust image processing parameters if needed
-4. Export data as needed
+2. Run the application:
+   ```bash
+   python main.py
+   ```
+
+3. Using the application:
+   - **Load Images**: Click 'Open' to load spectral line images
+   - **Calibrate**: Set up magnetic field calibration in the calibration window
+   - **Take Measurements**:
+     - Click to set center point
+     - Click to measure inner and outer radii
+     - Review measurements in the table
+     - Delete and redo measurements if needed
+   - **Analyze Results**:
+     - View plots in the plot window
+     - Check calculated results in the results window
+   - **Export Data**:
+     - Save plots as PNG/PDF
+     - Export measurements to CSV
+     - Copy results to clipboard
 
 ## Details
 
