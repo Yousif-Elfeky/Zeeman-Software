@@ -1,9 +1,8 @@
 *.png
 *.jpg
 *.cvs
-src/__pycache__/
-src/gui/__pycache__/
-src/pyhsics/__pycache__/
-src/processing/__pycache__/
-src/utils/__pycache__/
-
+src/__pycache__/*
+src/gui/__pycache__/*
+src/pyhsics/__pycache__/*
+src/processing/__pycache__/*
+src/utils/__pycache__/*
