@@ -559,9 +559,9 @@ class MainWindow(QMainWindow):
                     self.update_display() # Update display to clear annulus lines and show new radius/lack thereof
                     self.update_measurements_display() # Update table if measurements changed
 
-            else: # This 'else' corresponds to 'if self.auto_detect_limits['lower'] is None:'
-                 # This means it's the first click for annulus definition, show orange circle
-                self.update_display()
+        elif self.current_mode and self.current_mode.startswith('auto_'):
+            # This means it's the first click for annulus definition, show orange circle
+            self.update_display()
 
 
         elif self.current_mode == 'calibrate':
