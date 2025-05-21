@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple
 
 class ImageProcessor:
     def __init__(self):
@@ -31,52 +31,60 @@ class ImageProcessor:
         
         return self.processed_image
     
-    def detect_spectral_lines(self, processed_image: np.ndarray, center_x: int, center_y: int, radius_lower_limit: int, radius_upper_limit: int) -> Optional[int]:
-        """Detect and measure the radii of spectral lines using Hough Circle Transform in an annular region."""
+    def detect_spectral_lines(self, processed_image: np.ndarray, initial_center_x: int, initial_center_y: int, radius_lower_limit: int, radius_upper_limit: int, center_search_window_half_size: int = 5) -> Optional[Tuple[int, int, int]]:
+        """Detect and measure the spectral lines, returning the center (x,y) and radius (r) of the best circle found."""
         if not (0 <= radius_lower_limit < radius_upper_limit):
             raise ValueError("Radius limits are invalid.")
-
         if processed_image is None:
             raise ValueError("Processed image is not available.")
-        
         if processed_image.ndim != 2:
-            # Assuming processed_image should be grayscale
             raise ValueError("Processed image must be grayscale.")
+        if center_search_window_half_size < 0:
+            raise ValueError("Center search window half size must be non-negative.")
 
-        # Create an annular mask
+        # Create an annular mask centered at the initial_center_x, initial_center_y
+        # The HoughCircles will search within this masked region.
+        # The actual filtering for center_search_window_half_size happens *after* circle detection.
         mask = np.zeros(processed_image.shape, dtype=np.uint8)
-        cv2.circle(mask, (center_x, center_y), radius_upper_limit, 255, -1)
-        cv2.circle(mask, (center_x, center_y), radius_lower_limit, 0, -1)
+        cv2.circle(mask, (initial_center_x, initial_center_y), radius_upper_limit, 255, -1)
+        cv2.circle(mask, (initial_center_x, initial_center_y), radius_lower_limit, 0, -1)
         
-        # Apply the mask to the image
         roi_image = cv2.bitwise_and(processed_image, processed_image, mask=mask)
         
-        # Detect circles using Hough Circle Transform
-        # Parameters might need tuning:
-        # dp: Inverse ratio of the accumulator resolution to the image resolution.
-        # minDist: Minimum distance between the centers of the detected circles.
-        # param1: Higher threshold for the Canny edge detector.
-        # param2: Accumulator threshold for the circle centers at the detection stage.
-        # minRadius: Minimum circle radius.
-        # maxRadius: Maximum circle radius.
+        # Adjust HoughCircles parameters
+        # minDist: max(1, int(radius_lower_limit / 4)) to allow detecting circles that might be close if center shifts.
+        # param2: 15 (lowered accumulator threshold to be more lenient)
         circles = cv2.HoughCircles(
             roi_image,
             cv2.HOUGH_GRADIENT,
-            dp=1,
-            minDist=radius_upper_limit * 2, # Ensure circles are reasonably separated
-            param1=100, # Canny edge upper threshold
-            param2=20,  # Accumulator threshold
+            dp=1, # Standard resolution
+            minDist=max(1, int(radius_lower_limit / 4)), 
+            param1=100, # Canny edge upper threshold (standard value)
+            param2=15,  # Accumulator threshold (lowered)
             minRadius=radius_lower_limit,
             maxRadius=radius_upper_limit
         )
         
         if circles is not None:
-            # Circles are returned as a float32 array: [[x, y, radius], ...]
-            # Convert to integers and return the radius of the first detected circle
-            circles = np.uint16(np.around(circles))
-            # For simplicity, return the radius of the first circle found.
-            # Additional logic could be added here to select the "best" circle
-            # (e.g., based on proximity to expected center or other criteria).
-            return int(circles[0, 0, 2]) 
+            # circles is [[[x, y, r], [x, y, r], ...]]
+            detected_circles = circles[0, :] 
+            
+            valid_circles = []
+            for c in detected_circles:
+                x, y, r = c[0], c[1], c[2]
+                # Filter by center search window
+                if (abs(x - initial_center_x) <= center_search_window_half_size and
+                    abs(y - initial_center_y) <= center_search_window_half_size):
+                    valid_circles.append((x, y, r))
+            
+            if not valid_circles:
+                return None
+
+            # Select the best circle: closest to initial_center_x, initial_center_y
+            # If multiple are equally close, this will pick the first one encountered by min().
+            # A secondary sort key (e.g., by radius size) could be added if needed.
+            best_circle = min(valid_circles, key=lambda c_val: np.sqrt((c_val[0] - initial_center_x)**2 + (c_val[1] - initial_center_y)**2))
+            
+            return int(round(best_circle[0])), int(round(best_circle[1])), int(round(best_circle[2]))
             
         return None

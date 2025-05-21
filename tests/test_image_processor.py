@@ -71,13 +71,17 @@ class TestImageProcessor(unittest.TestCase):
         # Annulus tightly around the actual ring
         # Note: The detect_spectral_lines method in ImageProcessor has its own HoughCircles parameters.
         # The important part here is that the annulus (minRadius, maxRadius for HoughCircles) is correctly used.
-        detected_radius = self.processor.detect_spectral_lines(
+        detection_result = self.processor.detect_spectral_lines(
             processed_image, 
-            center_x, center_y, 
-            radius_lower_limit=radius-2, radius_upper_limit=radius+2
+            initial_center_x=center_x, initial_center_y=center_y, 
+            radius_lower_limit=radius-2, radius_upper_limit=radius+2,
+            center_search_window_half_size=1 
         )
-        self.assertIsNotNone(detected_radius, "No ring detected in clear_ring_exact_annulus.")
+        self.assertIsNotNone(detection_result, "No ring detected in clear_ring_exact_annulus.")
+        detected_x, detected_y, detected_radius = detection_result
         self.assertAlmostEqual(detected_radius, radius, delta=1, msg="Detected radius not close enough in clear_ring_exact_annulus.")
+        self.assertAlmostEqual(detected_x, center_x, delta=1, msg="Detected center X not close enough in clear_ring_exact_annulus.")
+        self.assertAlmostEqual(detected_y, center_y, delta=1, msg="Detected center Y not close enough in clear_ring_exact_annulus.")
 
     def test_detect_ring_at_annulus_edge(self):
         center_x, center_y = 50, 50
@@ -86,20 +90,28 @@ class TestImageProcessor(unittest.TestCase):
         processed_image = self._create_test_image_with_ring("edge_ring.png", img_size=img_size, center=(center_x,center_y), radius=radius)
 
         # Annulus where the ring is right at the lower bound
-        detected_radius_lower_edge = self.processor.detect_spectral_lines(
-            processed_image, center_x, center_y, 
-            radius_lower_limit=radius, radius_upper_limit=radius+5
+        detection_result_lower = self.processor.detect_spectral_lines(
+            processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+            radius_lower_limit=radius, radius_upper_limit=radius+5,
+            center_search_window_half_size=1
         )
-        self.assertIsNotNone(detected_radius_lower_edge, "No ring detected at lower edge of annulus.")
-        self.assertAlmostEqual(detected_radius_lower_edge, radius, delta=1, msg="Detected radius not close enough at lower edge.")
+        self.assertIsNotNone(detection_result_lower, "No ring detected at lower edge of annulus.")
+        lx, ly, lr = detection_result_lower
+        self.assertAlmostEqual(lr, radius, delta=1, msg="Detected radius not close enough at lower edge.")
+        self.assertAlmostEqual(lx, center_x, delta=1, msg="Detected center X not close enough at lower edge.")
+        self.assertAlmostEqual(ly, center_y, delta=1, msg="Detected center Y not close enough at lower edge.")
 
         # Annulus where the ring is right at the upper bound
-        detected_radius_upper_edge = self.processor.detect_spectral_lines(
-            processed_image, center_x, center_y, 
-            radius_lower_limit=radius-5, radius_upper_limit=radius
+        detection_result_upper = self.processor.detect_spectral_lines(
+            processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+            radius_lower_limit=radius-5, radius_upper_limit=radius,
+            center_search_window_half_size=1
         )
-        self.assertIsNotNone(detected_radius_upper_edge, "No ring detected at upper edge of annulus.")
-        self.assertAlmostEqual(detected_radius_upper_edge, radius, delta=1, msg="Detected radius not close enough at upper edge.")
+        self.assertIsNotNone(detection_result_upper, "No ring detected at upper edge of annulus.")
+        ux, uy, ur = detection_result_upper
+        self.assertAlmostEqual(ur, radius, delta=1, msg="Detected radius not close enough at upper edge.")
+        self.assertAlmostEqual(ux, center_x, delta=1, msg="Detected center X not close enough at upper edge.")
+        self.assertAlmostEqual(uy, center_y, delta=1, msg="Detected center Y not close enough at upper edge.")
 
     def test_no_ring_in_annulus(self):
         center_x, center_y = 50, 50
@@ -108,11 +120,12 @@ class TestImageProcessor(unittest.TestCase):
         processed_image = self._create_test_image_with_ring("no_ring_here.png", img_size=img_size, center=(center_x,center_y), radius=radius)
 
         # Annulus far from the actual ring
-        detected_radius = self.processor.detect_spectral_lines(
-            processed_image, center_x, center_y, 
-            radius_lower_limit=radius+10, radius_upper_limit=radius+20
+        detection_result = self.processor.detect_spectral_lines(
+            processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+            radius_lower_limit=radius+10, radius_upper_limit=radius+20,
+            center_search_window_half_size=1
         )
-        self.assertIsNone(detected_radius, f"Expected no ring, but got radius {detected_radius}.")
+        self.assertIsNone(detection_result, f"Expected no ring, but got result {detection_result}.")
 
     def test_detect_ring_with_noise(self):
         center_x, center_y = 50, 50
@@ -121,12 +134,17 @@ class TestImageProcessor(unittest.TestCase):
         # Create an image with a ring and some noise
         processed_image = self._create_test_image_with_ring("noisy_ring.png", img_size=img_size, center=(center_x,center_y), radius=radius, noise_level=1)
         
-        detected_radius = self.processor.detect_spectral_lines(
-            processed_image, center_x, center_y, 
-            radius_lower_limit=radius-3, radius_upper_limit=radius+3
+        detection_result = self.processor.detect_spectral_lines(
+            processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+            radius_lower_limit=radius-3, radius_upper_limit=radius+3,
+            center_search_window_half_size=2 
         )
-        self.assertIsNotNone(detected_radius, "Detection failed with noise. HoughCircles params may need tuning or better pre-processing.")
+        self.assertIsNotNone(detection_result, "Detection failed with noise. HoughCircles params may need tuning or better pre-processing.")
+        detected_x, detected_y, detected_radius = detection_result
         self.assertAlmostEqual(detected_radius, radius, delta=2, msg="Detected radius not close enough with noise.")
+        self.assertAlmostEqual(detected_x, center_x, delta=3, msg="Detected center X not close enough with noise.") # Allow larger delta for center with noise
+        self.assertAlmostEqual(detected_y, center_y, delta=3, msg="Detected center Y not close enough with noise.")
+
 
     def test_invalid_annulus_limits_inverted(self):
         center_x, center_y = 50, 50
@@ -137,8 +155,9 @@ class TestImageProcessor(unittest.TestCase):
         # The method itself raises ValueError for this.
         with self.assertRaises(ValueError):
             self.processor.detect_spectral_lines(
-                processed_image, center_x, center_y, 
-                radius_lower_limit=30, radius_upper_limit=20
+                processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+                radius_lower_limit=30, radius_upper_limit=20,
+                center_search_window_half_size=0
             )
 
     def test_invalid_annulus_limits_negative(self):
@@ -150,14 +169,16 @@ class TestImageProcessor(unittest.TestCase):
         # The method itself raises ValueError for this.
         with self.assertRaises(ValueError):
             self.processor.detect_spectral_lines(
-                processed_image, center_x, center_y, 
-                radius_lower_limit=-10, radius_upper_limit=10
+                processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+                radius_lower_limit=-10, radius_upper_limit=10,
+                center_search_window_half_size=0
             )
         
         with self.assertRaises(ValueError):
             self.processor.detect_spectral_lines(
-                processed_image, center_x, center_y, 
-                radius_lower_limit=5, radius_upper_limit=-10
+                processed_image, initial_center_x=center_x, initial_center_y=center_y, 
+                radius_lower_limit=5, radius_upper_limit=-10,
+                center_search_window_half_size=0
             )
 
     def test_non_grayscale_image_input(self):
@@ -170,9 +191,52 @@ class TestImageProcessor(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "Processed image must be grayscale."):
             self.processor.detect_spectral_lines(
-                color_image, center_x, center_y,
-                radius_lower_limit=radius-2, radius_upper_limit=radius+2
+                color_image, initial_center_x=center_x, initial_center_y=center_y,
+                radius_lower_limit=radius-2, radius_upper_limit=radius+2,
+                center_search_window_half_size=1
             )
+
+    def test_detect_ring_with_offset_center(self):
+        initial_center_x, initial_center_y = 50, 50
+        actual_ring_center_x, actual_ring_center_y = 52, 53 # Ring is slightly offset
+        radius = 25
+        img_size = (100,100)
+        
+        # Create image with the ring at its actual offset center
+        # Filename is not strictly needed as we pass image data directly
+        processed_image = self._create_test_image_with_ring(
+            "offset_center_ring.png", 
+            img_size=img_size, 
+            center=(actual_ring_center_x, actual_ring_center_y), 
+            radius=radius
+        )
+        
+        # Annulus is defined around the *initial* (slightly incorrect) center
+        # Center search window should be large enough to find the actual center
+        search_window = 5 
+        detection_result = self.processor.detect_spectral_lines(
+            processed_image, 
+            initial_center_x=initial_center_x, initial_center_y=initial_center_y, 
+            radius_lower_limit=radius-3, radius_upper_limit=radius+3,
+            center_search_window_half_size=search_window 
+        )
+        
+        self.assertIsNotNone(detection_result, "Ring not detected with offset center.")
+        detected_x, detected_y, detected_radius = detection_result
+        
+        self.assertAlmostEqual(detected_radius, radius, delta=1)
+        # Check if the detected center is the *actual* ring center, not the initial one
+        self.assertAlmostEqual(detected_x, actual_ring_center_x, delta=1, msg="Detected center X is not the actual ring center.")
+        self.assertAlmostEqual(detected_y, actual_ring_center_y, delta=1, msg="Detected center Y is not the actual ring center.")
+        
+        # Check that detected center is different from initial if offset is significant enough
+        # (allowing for delta=1 in previous assertions)
+        offset_x_significant = abs(actual_ring_center_x - initial_center_x) > 1
+        offset_y_significant = abs(actual_ring_center_y - initial_center_y) > 1
+        if offset_x_significant or offset_y_significant:
+            self.assertTrue(detected_x != initial_center_x or detected_y != initial_center_y, 
+                            f"Center should have been adjusted from ({initial_center_x},{initial_center_y}) to ({detected_x},{detected_y}) but wasn't, or was adjusted back to initial.")
+
 
 if __name__ == '__main__':
     unittest.main()
