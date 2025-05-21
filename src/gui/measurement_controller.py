@@ -3,10 +3,6 @@ from PyQt6.QtWidgets import QMessageBox, QInputDialog # For popups previously in
 from typing import Optional, Dict, List, Any # For type hints
 import numpy as np # For np.sqrt in handle_image_click
 
-# Forward declaration for type hinting to avoid circular imports if MainWindow imports this.
-# Actual instances are passed in __init__.
-# class MainWindow: pass 
-
 class MeasurementController:
     def __init__(self, main_window_instance): # main_window_instance is a reference to the MainWindow instance
         self.mw = main_window_instance # MainWindow reference
@@ -105,23 +101,40 @@ class MeasurementController:
                     lower_rad = int(self.auto_detect_limits['lower'])
                     upper_rad = int(self.auto_detect_limits['upper'])
 
+                    # Increase the search window size for better center point adjustment
+                    center_search_window_size = 10  # Larger window for more candidate points
+                    
                     detected_info = self.mw.image_processor.detect_spectral_lines(
                         enhanced_image, initial_center_x, initial_center_y, 
-                        lower_rad, upper_rad, center_search_window_half_size=5)
+                        lower_rad, upper_rad, center_search_window_half_size=center_search_window_size)
 
                     if detected_info:
                         det_x, det_y, det_r = detected_info
                         original_center_qpoint = center_point
                         new_center_qpoint = QPoint(det_x, det_y)
                         
+                        # Calculate the center adjustment distance
+                        center_shift_distance = np.sqrt((det_x - original_center_qpoint.x())**2 + 
+                                                     (det_y - original_center_qpoint.y())**2)
+                        
                         self.current_measurement['center'] = new_center_qpoint
                         self.current_measurement['radii'][ring_type_to_update] = det_r
                         self.current_measurement['type'] = ring_type_to_update
                         
-                        msg = f"Auto-detection for {ring_type_to_update} ring: Radius {det_r:.2f} px."
-                        if new_center_qpoint != original_center_qpoint:
-                            msg += f"\nCenter adjusted: ({original_center_qpoint.x()},{original_center_qpoint.y()}) -> ({det_x},{det_y})."
-                        QMessageBox.information(self.mw, 'Success', msg)
+                        # Create a detailed message with information about the detection
+                        msg = f"Auto-detection for {ring_type_to_update} ring successful:\n"
+                        msg += f"• Detected radius: {det_r:.2f} pixels\n"
+                        
+                        if center_shift_distance > 0.5:  # Only mention adjustment if it's significant
+                            msg += f"• Center point adjusted by {center_shift_distance:.2f} pixels\n"
+                            msg += f"• Original center: ({original_center_qpoint.x()}, {original_center_qpoint.y()})\n"
+                            msg += f"• Optimized center: ({det_x}, {det_y})\n"
+                            msg += "\nThe center was automatically adjusted to better match the spectral ring pattern."
+                        else:
+                            msg += f"• Center point remained at ({det_x}, {det_y})\n"
+                            msg += "\nThe manually specified center point was optimal."
+                            
+                        QMessageBox.information(self.mw, 'Auto-Detection Success', msg)
                     else:
                         self.current_measurement['radii'][ring_type_to_update] = None
                         QMessageBox.warning(self.mw, 'Failure', f"Auto-detection failed for {ring_type_to_update} ring.")
