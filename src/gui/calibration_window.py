@@ -11,19 +11,15 @@ class CalibrationWindow(QMainWindow):
         self.setWindowTitle('Magnetic Field Calibration')
         self.setGeometry(500, 200, 800, 600)
         
-        # Data storage
         self.calibration_points = []  # List of (current, field) tuples
         self.calibration_params = None  # Will store (slope, intercept)
         
-        # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
         
-        # Input section
         input_layout = QHBoxLayout()
         
-        # Current input
         current_layout = QVBoxLayout()
         current_label = QLabel('Current (A):')
         self.current_input = QDoubleSpinBox()
@@ -34,7 +30,6 @@ class CalibrationWindow(QMainWindow):
         current_layout.addWidget(self.current_input)
         input_layout.addLayout(current_layout)
         
-        # Field input
         field_layout = QVBoxLayout()
         field_label = QLabel('Magnetic Field (Gauss):')
         self.field_input = QDoubleSpinBox()
@@ -45,26 +40,22 @@ class CalibrationWindow(QMainWindow):
         field_layout.addWidget(self.field_input)
         input_layout.addLayout(field_layout)
         
-        # Add point button
         self.add_point_btn = QPushButton('Add Point')
         self.add_point_btn.clicked.connect(self.add_point)
         input_layout.addWidget(self.add_point_btn)
         
         layout.addLayout(input_layout)
         
-        # Table for points
         self.table = QTableWidget()
         self.table.setColumnCount(2)
         self.table.setHorizontalHeaderLabels(['Current (A)', 'Field (Gauss)'])
         layout.addWidget(self.table)
         
-        # Plot
         self.figure = Figure()
         self.ax = self.figure.add_subplot(111)
         self.canvas = FigureCanvas(self.figure)
         layout.addWidget(self.canvas)
         
-        # Add save plot button
         button_layout = QHBoxLayout()
         save_button = QPushButton('Save Plot')
         save_button.clicked.connect(self.save_plot)
@@ -72,57 +63,43 @@ class CalibrationWindow(QMainWindow):
         button_layout.addWidget(save_button)
         layout.addLayout(button_layout)
         
-        # Calibration status
         self.status_label = QLabel('No calibration data')
         layout.addWidget(self.status_label)
     
     def add_point(self):
-        """Add a calibration point."""
         current = self.current_input.value()
         field = self.field_input.value()
         
-        # Add to list
         self.calibration_points.append((current, field))
         
-        # Update table
         self.table.setRowCount(len(self.calibration_points))
         row = len(self.calibration_points) - 1
         self.table.setItem(row, 0, QTableWidgetItem(f"{current:.3f}"))
         self.table.setItem(row, 1, QTableWidgetItem(f"{field:.1f}"))
         
-        # Update plot and fit
         self.update_plot()
     
     def update_plot(self):
-        """Update the plot with current data and fit."""
         self.ax.clear()
         
         if len(self.calibration_points) > 0:
-            # Split points into x and y arrays
             currents, fields = zip(*self.calibration_points)
             
-            # Plot points
             self.ax.scatter(currents, fields, color='blue', marker='o', s=100, label='Measurements')
             
-            # Add fit line if we have enough points
             if len(self.calibration_points) > 1:
-                # Convert to numpy arrays for fitting
                 currents = np.array(currents)
                 fields = np.array(fields)
                 
-                # Fit line
                 slope, intercept = np.polyfit(currents, fields, 1)
                 self.calibration_params = (slope, intercept)
                 
-                # Create line points
                 x_line = np.linspace(min(currents), max(currents), 100)
                 y_line = slope * x_line + intercept
                 
-                # Plot line
                 self.ax.plot(x_line, y_line, 'r-', linewidth=2, 
                            label=f'Fit: {slope:.1f} G/A', alpha=0.7)
                 
-                # Update status
                 self.status_label.setText(
                     f'Calibration: B(Gauss) = {slope:.1f} × I(A) + {intercept:.1f}\n'
                     f'For Tesla: B(T) = {slope*1e-4:.6f} × I(A) + {intercept*1e-4:.6f}'
@@ -137,7 +114,6 @@ class CalibrationWindow(QMainWindow):
         self.canvas.draw()
         
     def save_plot(self):
-        """Save the calibration plot as an image file."""
         file_name, _ = QFileDialog.getSaveFileName(
             self,
             'Save Calibration Plot',
@@ -148,10 +124,9 @@ class CalibrationWindow(QMainWindow):
             self.figure.savefig(file_name, dpi=300, bbox_inches='tight')
     
     def get_field_for_current(self, current):
-        """Convert current to magnetic field in Tesla using calibration."""
         if self.calibration_params is None:
             raise ValueError("No calibration data available")
             
         slope, intercept = self.calibration_params
         field_gauss = slope * current + intercept
-        return field_gauss * 1e-4  # Convert Gauss to Tesla
+        return field_gauss * 1e-4  

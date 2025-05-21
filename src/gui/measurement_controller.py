@@ -1,27 +1,22 @@
 from PyQt6.QtCore import QPoint
-from PyQt6.QtWidgets import QMessageBox, QInputDialog # For popups previously in MainWindow's image_clicked
-from typing import Optional, Dict, List, Any # For type hints
-import numpy as np # For np.sqrt in handle_image_click
+from PyQt6.QtWidgets import QMessageBox, QInputDialog
+from typing import Optional, Dict, List, Any
+import numpy as np
 
 class MeasurementController:
-    def __init__(self, main_window_instance): # main_window_instance is a reference to the MainWindow instance
-        self.mw = main_window_instance # MainWindow reference
+    def __init__(self, main_window_instance): 
+        self.mw = main_window_instance 
 
-        # State variables moved from MainWindow
         self.current_mode: Optional[str] = None
         self.calibration_points: List[QPoint] = []
-        # current_measurement structure: {'center': QPoint|None, 'type': str|None, 'radii': {'inner':None,'middle':None,'outer':None}}
         self.current_measurement: Dict[str, Any] = { 
             'center': None, 'type': None, 'radii': {'inner': None, 'middle': None, 'outer': None}
         }
-        # mm_per_pixel is specific to an image, accessed via self.mw.images[idx]['mm_per_pixel']
-        # self.calibration_distance_mm is accessed via self.mw.calibration_distance_mm
 
         self.auto_detect_limits: Dict[str, Optional[float]] = {'lower': None, 'upper': None}
         self.is_defining_annulus: bool = False
 
     def reset_all_measurement_states(self):
-        """Resets all states related to a single measurement process (like after saving or full reset)."""
         self.current_mode = None
         self.calibration_points = []
         self.current_measurement = {
@@ -31,12 +26,10 @@ class MeasurementController:
         self.is_defining_annulus = False
 
     def initialize_for_new_measurement(self):
-        """Resets only the parts of current_measurement for a new set of radii with existing center/calibration."""
-        current_center = self.current_measurement.get('center') # Use .get for safety
+        current_center = self.current_measurement.get('center') 
         self.current_measurement = {
             'center': current_center, 'type': None, 'radii': {'inner': None, 'middle': None, 'outer': None}
         }
-        # Mode, auto_detect_limits, is_defining_annulus are handled by set_mode or other specific logic.
 
     def set_mode(self, mode: Optional[str]):
         self.current_mode = mode
@@ -48,12 +41,12 @@ class MeasurementController:
             if self.current_measurement.get('center') is None:
                 QMessageBox.information(self.mw, 'Set Center First', 
                                         'Please set the center point before defining an annulus for auto-detection.')
-                self.current_mode = None # Abort mode set
+                self.current_mode = None 
                 self.is_defining_annulus = False
-                return # Return early to prevent further state changes for this mode
+                return 
             self.is_defining_annulus = True
             self.auto_detect_limits = {'lower': None, 'upper': None}
-        else: # For manual modes 'inner', 'middle', 'outer', 'calibrate', or None
+        else: 
             self.is_defining_annulus = False
             self.auto_detect_limits = {'lower': None, 'upper': None}
         
@@ -67,17 +60,16 @@ class MeasurementController:
 
         current_image_data = self.mw.images[self.mw.current_image_index]
 
-        # --- Annulus Definition Logic ---
         if self.is_defining_annulus and self.current_mode and self.current_mode.startswith('auto_'):
             center_point = self.current_measurement.get('center')
             if center_point is None: 
                 QMessageBox.warning(self.mw, "Error", "Center point is not set. Cannot define annulus.")
-                self._reset_auto_detect_state_and_update_ui() # Reset state
+                self._reset_auto_detect_state_and_update_ui() 
                 return
 
             dx = pos.x() - center_point.x()
             dy = pos.y() - center_point.y()
-            clicked_radius = np.sqrt(dx**2 + dy**2) # Use np.sqrt
+            clicked_radius = np.sqrt(dx**2 + dy**2) 
 
             if self.auto_detect_limits.get('lower') is None:
                 self.auto_detect_limits['lower'] = clicked_radius
@@ -87,22 +79,21 @@ class MeasurementController:
                     self.auto_detect_limits['lower'], self.auto_detect_limits['upper'] = \
                         self.auto_detect_limits['upper'], self.auto_detect_limits['lower']
                 
-                self.mw.update_display() # Show both annulus lines before detection
+                self.mw.update_display() 
 
                 ring_type_to_update = self.current_mode.split('_')[1]
                 
                 try:
                     raw_rgb_image = current_image_data['image']
-                    self.mw.image_processor.image = raw_rgb_image # Pass raw RGB
-                    enhanced_image = self.mw.image_processor.enhance_image() # Processor converts to gray
+                    self.mw.image_processor.image = raw_rgb_image 
+                    enhanced_image = self.mw.image_processor.enhance_image() 
                     
                     initial_center_x = center_point.x()
                     initial_center_y = center_point.y()
                     lower_rad = int(self.auto_detect_limits['lower'])
                     upper_rad = int(self.auto_detect_limits['upper'])
 
-                    # Increase the search window size for better center point adjustment
-                    center_search_window_size = 10  # Larger window for more candidate points
+                    center_search_window_size = 10  
                     
                     detected_info = self.mw.image_processor.detect_spectral_lines(
                         enhanced_image, initial_center_x, initial_center_y, 
@@ -113,7 +104,6 @@ class MeasurementController:
                         original_center_qpoint = center_point
                         new_center_qpoint = QPoint(det_x, det_y)
                         
-                        # Calculate the center adjustment distance
                         center_shift_distance = np.sqrt((det_x - original_center_qpoint.x())**2 + 
                                                      (det_y - original_center_qpoint.y())**2)
                         
@@ -121,11 +111,10 @@ class MeasurementController:
                         self.current_measurement['radii'][ring_type_to_update] = det_r
                         self.current_measurement['type'] = ring_type_to_update
                         
-                        # Create a detailed message with information about the detection
                         msg = f"Auto-detection for {ring_type_to_update} ring successful:\n"
                         msg += f"• Detected radius: {det_r:.2f} pixels\n"
                         
-                        if center_shift_distance > 0.5:  # Only mention adjustment if it's significant
+                        if center_shift_distance > 0.5: 
                             msg += f"• Center point adjusted by {center_shift_distance:.2f} pixels\n"
                             msg += f"• Original center: ({original_center_qpoint.x()}, {original_center_qpoint.y()})\n"
                             msg += f"• Optimized center: ({det_x}, {det_y})\n"
@@ -144,9 +133,8 @@ class MeasurementController:
                 finally:
                     self._reset_auto_detect_state_and_update_ui()
             
-            self.mw.update_display() # Update after first or second click of annulus definition
+            self.mw.update_display() 
 
-        # --- Calibration Logic ---
         elif self.current_mode == 'calibrate':
             self.calibration_points.append(pos)
             if len(self.calibration_points) == 2:
@@ -157,7 +145,7 @@ class MeasurementController:
                 if ok:
                     dx = self.calibration_points[1].x() - self.calibration_points[0].x()
                     dy = self.calibration_points[1].y() - self.calibration_points[0].y()
-                    pixel_dist = np.sqrt(dx**2 + dy**2) # Use np.sqrt
+                    pixel_dist = np.sqrt(dx**2 + dy**2) 
                     if pixel_dist > 0:
                         current_image_data['mm_per_pixel'] = distance / pixel_dist
                     else:
@@ -167,15 +155,13 @@ class MeasurementController:
                 self.current_mode = None 
             self.mw.update_display()
 
-        # --- Center Point Logic ---
         elif self.current_mode == 'center':
             self.current_measurement['center'] = pos
             self.current_mode = None 
             self.mw.update_display()
-            if hasattr(self.mw, 'update_measurements_display'): # Check if MainWindow has this method
+            if hasattr(self.mw, 'update_measurements_display'): 
                  self.mw.update_measurements_display()
 
-        # --- Manual Radius Measurement Logic ---
         elif self.current_mode in ['inner', 'middle', 'outer']:
             center_point = self.current_measurement.get('center')
             if center_point is None:
@@ -185,13 +171,11 @@ class MeasurementController:
             
             dx = pos.x() - center_point.x()
             dy = pos.y() - center_point.y()
-            radius = np.sqrt(dx**2 + dy**2) # Use np.sqrt
+            radius = np.sqrt(dx**2 + dy**2) 
             
             self.current_measurement['radii'][self.current_mode] = radius
             self.current_measurement['type'] = self.current_mode
             
-            # Persist to the image specific data in MainWindow
-            # This assumes current_image_data is the dictionary for the current image
             if 'measurement' not in current_image_data or current_image_data['measurement'] is None:
                  current_image_data['measurement'] = {'center': None, 'type': None, 'radii': {'inner':None,'middle':None,'outer':None}}
             current_image_data['measurement']['center'] = self.current_measurement['center']
@@ -206,8 +190,7 @@ class MeasurementController:
             pass
 
     def _reset_auto_detect_state_and_update_ui(self):
-        """Helper to reset auto-detection related state and refresh UI."""
-        self.current_mode = None # Reset mode after auto-detection attempt
+        self.current_mode = None 
         self.auto_detect_limits = {'lower': None, 'upper': None}
         self.is_defining_annulus = False
         self.mw.update_display()

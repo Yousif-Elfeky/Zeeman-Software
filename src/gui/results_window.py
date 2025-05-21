@@ -8,17 +8,14 @@ class ResultsWindow(QMainWindow):
         self.setWindowTitle('Zeeman Effect Results')
         self.setGeometry(400, 400, 600, 400)
         
-        # Create central widget and layout
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         layout = QVBoxLayout(central_widget)
         
-        # Create scroll area for results
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         layout.addWidget(scroll)
         
-        # Create results label
         self.results_label = QLabel()
         self.results_label.setWordWrap(True)
         self.results_label.setTextInteractionFlags(
@@ -28,7 +25,6 @@ class ResultsWindow(QMainWindow):
         self.results_label.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(self.results_label)
         
-        # Add copy button
         button_layout = QHBoxLayout()
         copy_button = QPushButton('Copy Results')
         copy_button.clicked.connect(self.copy_results)
@@ -37,7 +33,6 @@ class ResultsWindow(QMainWindow):
         layout.addLayout(button_layout)
     
     def update_results(self, results):
-        """Update the results display."""
         bohr_magneton_inner, bohr_magneton_outer, bohr_magneton_avg, \
         specific_charge_inner, specific_charge_outer, specific_charge_avg = results
         
@@ -56,9 +51,8 @@ class ResultsWindow(QMainWindow):
         text += f"Specific charge: {abs(specific_charge_avg - 1.758e11)/1.758e11*100:.1f}%"
         
         self.results_label.setText(text)
-        self._current_text = text  # Store the text for copying
+        self._current_text = text  
         
     def copy_results(self):
-        """Copy results to clipboard."""
         clipboard = QApplication.clipboard()
         clipboard.setText(self._current_text)

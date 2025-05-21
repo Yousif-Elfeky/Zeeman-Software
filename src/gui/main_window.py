@@ -27,36 +27,28 @@ class MainWindow(QMainWindow):
         
         self.setWindowTitle('Zeeman Effect Analysis')
         
-        # Get screen size and set window size
         screen = QApplication.primaryScreen().geometry()
         self.screen_width = screen.width()
         self.screen_height = screen.height()
         
-        # Set window size to 80% of screen size
         window_width = int(self.screen_width * 0.8)
         window_height = int(self.screen_height * 0.8)
         
-        # Center the window
         x = (self.screen_width - window_width) // 2
         y = (self.screen_height - window_height) // 2
         
         self.setGeometry(x, y, window_width, window_height)
         
-        # Add keyboard shortcut for test data
         self.shortcut_test = QShortcut(QKeySequence('Ctrl+T'), self)
         self.shortcut_test.activated.connect(self.fill_test_data)
         
-        # Measurement variables
         self.images = []  # List of loaded images with their measurements
         self.current_image_index = -1
         self.current_measurement = None
         self.current_mode = None
-        # self.scale_factor = 1.0 # Will be managed by ImageDisplayManager
         
-        # Image Processor
         self.image_processor = ImageProcessor()
 
-        # Initialize measurement state
         self.current_mode = None  # 'calibrate', 'center', 'inner', 'middle', 'outer', 'auto_inner', 'auto_middle', 'auto_outer'
         self.calibration_points = []
         self.current_measurement = {
@@ -67,36 +59,27 @@ class MainWindow(QMainWindow):
         self.mm_per_pixel = None
         self.calibration_distance_mm = 10.0  # Default calibration distance
 
-        # State for auto-detection annulus definition
         self.auto_detect_limits = {'lower': None, 'upper': None}
         self.is_defining_annulus = False
         
-        # Initialize physics measurements
         self.measurements = []  # List of ZeemanMeasurement objects
         
-        # Create calibration window
         self.calibration_window = CalibrationWindow()
         
-        # Create UI
         self.create_ui() # self.image_display is created in here
 
-        # Initialize MeasurementController
         self.measurement_controller = MeasurementController(self)
 
-        # Initialize ImageDisplayManager after UI (and self.image_display) is created
         self.image_display_manager = ImageDisplayManager(self.image_display, self)
 
-    # --- Helper methods for creating QGroupBoxes ---
     def _create_image_controls_group(self) -> QGroupBox:
         image_group = QGroupBox('Image Controls')
         image_layout = QVBoxLayout()
 
-        # Load image button
         load_btn = QPushButton('Load Image')
         load_btn.clicked.connect(self.load_image)
         image_layout.addWidget(load_btn)
 
-        # Zoom controls
         zoom_layout = QHBoxLayout()
         zoom_in_btn = QPushButton('Zoom In')
         zoom_in_btn.clicked.connect(self.zoom_in)
@@ -124,7 +107,6 @@ class MainWindow(QMainWindow):
         self.calibration_label = QLabel("Scale: Not calibrated") # self.calibration_label is an attribute
         calibration_layout.addWidget(self.calibration_label)
         
-        # calibration_group.setLayout(calibration_layout) # Already set by passing to constructor
         return calibration_group
 
     def _create_measurement_controls_group(self) -> QGroupBox:
@@ -167,7 +149,6 @@ class MainWindow(QMainWindow):
         reset_btn.clicked.connect(self.reset_measurements)
         measurement_layout.addWidget(reset_btn)
         
-        # measurement_group.setLayout(measurement_layout) # Already set
         return measurement_group
 
     def _create_measurements_display_group(self) -> QGroupBox:
@@ -180,17 +161,14 @@ class MainWindow(QMainWindow):
         self.measurements_table.horizontalHeader().setStretchLastSection(True)
         measurements_layout.addWidget(self.measurements_table)
         
-        # measurements_group.setLayout(measurements_layout) # Already set
         return measurements_group
 
     def _create_results_group(self) -> QGroupBox:
         results_group = QGroupBox("Results")
         results_layout = QVBoxLayout(results_group)
         
-        # Parameters layout
         params_layout = QHBoxLayout()
         
-        # Current and calibration layout
         current_group = QGroupBox('Magnetic Field')
         current_group_layout = QVBoxLayout()
         
@@ -252,7 +230,6 @@ class MainWindow(QMainWindow):
         self.export_btn.clicked.connect(self.export_to_csv)
         results_layout.addWidget(self.export_btn)
         
-        # results_group.setLayout(results_layout) # Already set
         return results_group
 
     def create_ui(self):
@@ -261,7 +238,6 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central_widget)
         main_layout = QVBoxLayout(central_widget)
         
-        # Image navigation controls
         nav_layout = QHBoxLayout()
         self.prev_image_btn = QPushButton('Previous Image')
         self.prev_image_btn.clicked.connect(self.previous_image)
@@ -274,11 +250,9 @@ class MainWindow(QMainWindow):
         nav_layout.addWidget(self.next_image_btn)
         main_layout.addLayout(nav_layout)
         
-        # Create horizontal layout for image display and controls
         content_layout = QHBoxLayout()
         main_layout.addLayout(content_layout)
         
-        # Image display in a scroll area
         image_scroll = QScrollArea()
         image_scroll.setWidgetResizable(True)
         
@@ -295,10 +269,8 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(image_scroll, 60)  # 75% of width
         content_layout.setStretch(0, 60)  # Image area stretch factor
         
-        # Create control panel with scroll area
         self.control_scroll = QScrollArea()
         self.control_scroll.setWidgetResizable(True)
-        # Set control panel width to 1/4 of window width
         control_width = int(self.width() * 0.4)
         self.control_scroll.setFixedWidth(control_width)
         
@@ -307,14 +279,12 @@ class MainWindow(QMainWindow):
         control_layout.setSpacing(10)
         control_layout.setContentsMargins(10, 10, 10, 10)
         
-        # Call helper methods to create and add QGroupBoxes
         control_layout.addWidget(self._create_image_controls_group())
         control_layout.addWidget(self._create_calibration_group())
         control_layout.addWidget(self._create_measurement_controls_group())
         control_layout.addWidget(self._create_measurements_display_group())
         control_layout.addWidget(self._create_results_group())
         
-        # Initialize windows (These were part of the results_group creation logic, ensure they are initialized)
         self.plot_window = PlotWindow()
         self.table_window = TableWindow()
         self.results_window = ResultsWindow()
@@ -325,10 +295,8 @@ class MainWindow(QMainWindow):
         content_layout.addWidget(self.control_scroll, 25)  # 25% of width
         content_layout.setStretch(1, 25)  # Control panel stretch factor
         
-        # Set the central widget
         self.setCentralWidget(central_widget)
         
-        # Update UI state
         self.update_navigation()
     
     def update_display(self):
@@ -348,10 +316,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, 'Error', 'Failed to load image')
                 return
             
-            # Convert BGR to RGB for display
             image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             
-            # Add new image with its own calibration and measurements
             self.images.append({
                 'image': image,
                 'calibration_points': [],
@@ -368,18 +334,14 @@ class MainWindow(QMainWindow):
             self.update_measurements_display()
     
     def reset_measurements(self):
-        """Reset all measurements for the current image."""
         if self.current_image_index >= 0:
-            # Delegate to the measurement_controller
             self.measurement_controller.reset_all_measurement_states()
             
-            # Update our local variables to stay in sync
             self.current_measurement = self.measurement_controller.current_measurement
             self.current_mode = self.measurement_controller.current_mode
             self.is_defining_annulus = self.measurement_controller.is_defining_annulus
             self.auto_detect_limits = self.measurement_controller.auto_detect_limits
             
-            # Update the display
             self.update_display()
             self.update_measurements_display()
     
@@ -394,30 +356,23 @@ class MainWindow(QMainWindow):
         if pos is None:
             return
             
-        # Delegate the click handling to the measurement_controller
         self.measurement_controller.handle_image_click(pos)
         
-        # Update the current_measurement from the measurement_controller
         self.current_measurement = self.measurement_controller.current_measurement
         
-        # Update the current image's measurement data
         if self.current_image_index >= 0 and self.current_measurement:
             self.images[self.current_image_index]['measurement'] = self.current_measurement
     
     def set_measurement_mode(self, mode):
-        # Delegate to the measurement_controller
         self.measurement_controller.set_mode(mode)
         
-        # Update our local variables to stay in sync
         self.current_mode = self.measurement_controller.current_mode
         self.is_defining_annulus = self.measurement_controller.is_defining_annulus
         self.auto_detect_limits = self.measurement_controller.auto_detect_limits
         
-        # Update the display
         self.update_display()
     
     def save_measurement(self):
-        """Save current measurement with B-field value."""
         if not self.images or self.current_image_index < 0:
             QMessageBox.warning(self, 'Warning', 'No image loaded')
             return
@@ -430,10 +385,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Warning', 'Please measure all radii first')
             return
             
-        # Get current and convert to magnetic field
         try:
             current = self.current_input.value()
-            # Convert current to field using calibration
             slope, intercept = self.calibration_window.calibration_params
             field_gauss = slope * current + intercept
             magnetic_field = field_gauss / 1e4  # Convert Gauss to Tesla
@@ -446,7 +399,6 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Warning', 'Please calibrate the image first')
             return
             
-        # Create measurement object
         measurement = ZeemanMeasurement(
             B_field=magnetic_field,
             R_center=self.current_measurement['radii']['middle'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['middle'] is not None else None,
@@ -455,16 +407,12 @@ class MainWindow(QMainWindow):
             wavelength=self.wavelength_input.value() * 1e-9  # Convert nm to m
         )
         
-        # Process measurement
         measurement = process_measurement(measurement)
         
-        # Add to measurements list
         self.measurements.append(measurement)
         
-        # Update table window
         self.table_window.update_table(self.measurements)
         
-        # Clear current measurement
         self.current_measurement = {
             'center': None,
             'type': None,
@@ -474,27 +422,22 @@ class MainWindow(QMainWindow):
         self.update_measurements_display()
     
     def show_plot(self):
-        """Show the plot window."""
         self.plot_window.show()
         self.plot_window.raise_()
     
     def show_table(self):
-        """Show the table window."""
         self.table_window.show()
         self.table_window.raise_()
     
     def show_results(self):
-        """Show the results window."""
         self.results_window.show()
         self.results_window.raise_()
     
     def show_calibration(self):
-        """Show the magnetic field calibration window."""
         self.calibration_window.show()
         self.calibration_window.raise_()
     
     def previous_image(self):
-        """Switch to the previous image."""
         if self.current_image_index > 0:
             self.current_image_index -= 1
             self.initialize_measurement()
@@ -505,7 +448,6 @@ class MainWindow(QMainWindow):
             self.update_measurements_display()
     
     def next_image(self):
-        """Switch to the next image."""
         if self.current_image_index < len(self.images) - 1:
             self.current_image_index += 1
             self.initialize_measurement()
@@ -516,17 +458,13 @@ class MainWindow(QMainWindow):
             self.update_measurements_display()
     
     def resizeEvent(self, event):
-        """Handle window resize events."""
         super().resizeEvent(event)
-        # Update control panel width
         if hasattr(self, 'control_scroll'):
             control_width = int(self.width() * 0.25)
             self.control_scroll.setFixedWidth(control_width)
-        # Update display if there's an image
         self.update_display()
     
     def update_navigation(self):
-        """Update the navigation buttons and image label."""
         self.prev_image_btn.setEnabled(self.current_image_index > 0)
         self.next_image_btn.setEnabled(self.current_image_index < len(self.images) - 1)
         
@@ -536,27 +474,20 @@ class MainWindow(QMainWindow):
             self.image_label.setText("No image loaded")
     
     def initialize_measurement(self):
-        """Initialize or reset the current measurement."""
-        # Delegate to the measurement_controller
         self.measurement_controller.initialize_for_new_measurement()
         
-        # Update our local variable to stay in sync
         self.current_measurement = self.measurement_controller.current_measurement
     
     def zoom_in(self):
-        """Zoom in on the image."""
         self.image_display_manager.zoom_in()
     
     def zoom_out(self):
-        """Zoom out from the image."""
         self.image_display_manager.zoom_out()
     
     def reset_view(self):
-        """Reset the zoom level."""
         self.image_display_manager.reset_view()
     
     def update_scale_display(self):
-        """Update the scale/calibration display."""
         if not self.images or self.current_image_index < 0:
             self.calibration_label.setText("Scale: Not calibrated")
             return
@@ -568,28 +499,23 @@ class MainWindow(QMainWindow):
             self.calibration_label.setText("Scale: Not calibrated")
     
     def update_measurements_display(self):
-        """Update the measurements table."""
         self.measurements_table.setRowCount(len(self.measurements))
         
         for i, measurement in enumerate(self.measurements):
-            # Get current from B field using calibration
             try:
                 slope, intercept = self.calibration_window.calibration_params
                 current = (measurement.B_field * 1e4 - intercept) / slope
             except (AttributeError, TypeError):
                 current = 0
             
-            # Current
             current_item = QTableWidgetItem(f"{current:.3f}")
             current_item.setFlags(current_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.measurements_table.setItem(i, 0, current_item)
             
-            # B Field
             field_item = QTableWidgetItem(f"{measurement.B_field:.6f}")
             field_item.setFlags(field_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.measurements_table.setItem(i, 1, field_item)
             
-            # Create delete button
             delete_btn = QPushButton('Delete')
             delete_btn.clicked.connect(lambda checked, row=i: self.delete_measurement(row))
             self.measurements_table.setCellWidget(i, 2, delete_btn)
@@ -597,42 +523,33 @@ class MainWindow(QMainWindow):
         self.measurements_table.resizeColumnsToContents()
         
     def delete_measurement(self, index):
-        """Delete a measurement and update displays."""
         if 0 <= index < len(self.measurements):
-            # Remove the measurement
             self.measurements.pop(index)
             
-            # Update displays
             self.update_measurements_display()
             self.table_window.update_table(self.measurements)
             
-            # Update plot if measurements exist
             if self.measurements:
                 self.plot_window.plot_data(self.measurements)
             
             QMessageBox.information(self, 'Success', f'Measurement {index + 1} deleted')
     
     def calculate_results(self):
-        """Calculate final results and update all windows."""
         if not self.measurements:
             QMessageBox.warning(self, 'Warning', 'No measurements available')
             return
         
-        # Calculate Bohr magneton and specific charge
         results = calculate_bohr_magneton(self.measurements)
         
-        # Update windows
         self.plot_window.plot_data(self.measurements)
         self.table_window.update_table(self.measurements)
         self.results_window.update_results(results)
         
-        # Show all windows
         self.show_plot()
         self.show_table()
         self.show_results()
     
     def export_to_csv(self):
-        """Export measurements to a CSV file."""
         if not self.measurements:
             QMessageBox.warning(self, 'Warning', 'No measurements to export')
             return
@@ -647,14 +564,12 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        # Constants
         L = 150  # Distance in mm
         n = 1.46  # Refractive index
         
         with open(file_path, 'w', newline='') as f:
             writer = csv.writer(f, delimiter='\t')
             
-            # Write header
             writer.writerow([
                 'I(A)', 'B(G)', 
                 'R_i(mm)', 'R_c(mm)', 'R_o(mm)',
@@ -664,12 +579,9 @@ class MainWindow(QMainWindow):
                 'ΔE_i(eV)', 'ΔE_o(eV)'
             ])
             
-            # Write data
             for m in self.measurements:
-                # Get magnetic field in Gauss
                 B_field = m.B_field * 1e4  # Convert T to G
                 
-                # Get current from magnetic field using calibration
                 try:
                     slope, intercept = self.calibration_window.calibration_params
                     current = (B_field - intercept) / slope  # Inverse of B = slope * I + intercept
@@ -677,7 +589,6 @@ class MainWindow(QMainWindow):
                     QMessageBox.warning(self, 'Warning', 'Please calibrate the magnetic field first')
                     return
                 
-                # Calculate angles
                 def calc_angles(r_mm):
                     if r_mm is None:
                         return None, None
@@ -685,18 +596,16 @@ class MainWindow(QMainWindow):
                     beta = np.arcsin(np.sin(alpha) / n)
                     return alpha, beta
                 
-                # Calculate angles for each radius
                 alpha_i, beta_i = calc_angles(m.R_inner)
                 alpha_c, beta_c = calc_angles(m.R_center)
                 alpha_o, beta_o = calc_angles(m.R_outer)
                 
-                # Format values with appropriate precision
                 def format_val(val, precision=6):
                     return f"{val:.{precision}f}" if val is not None else ""
                 
                 row = [
-                    format_val(current, 2),  # Convert to A assuming 10000 G/A
-                    format_val(B_field, 2),  # Gauss
+                    format_val(current, 2),  
+                    format_val(B_field, 2),  
                     format_val(m.R_inner, 3) if m.R_inner else "",
                     format_val(m.R_center, 3) if m.R_center else "",
                     format_val(m.R_outer, 3) if m.R_outer else "",
@@ -716,8 +625,6 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, 'Success', f'Measurements exported to {file_path}')
 
     def fill_test_data(self):
-        """Fill test data for quick testing."""
-        # Test data for magnetic field calibration
         calibration_points = [
             (0.0, 0),
             (0.5, 5000),
@@ -726,80 +633,64 @@ class MainWindow(QMainWindow):
             (2.0, 20000)
         ]
         
-        # Show calibration window
         self.calibration_window.show()
         
-        # Fill calibration data
         for current, field in calibration_points:
             self.calibration_window.current_input.setValue(current)
             self.calibration_window.field_input.setValue(field)
             self.calibration_window.add_point()
         
-        # Calculate calibration parameters
         currents = [point[0] for point in calibration_points]
         fields = [point[1] for point in calibration_points]
         coeffs = np.polyfit(currents, fields, 1)
-        self.calibration_window.calibration_params = (coeffs[0], coeffs[1])  # slope, intercept
+        self.calibration_window.calibration_params = (coeffs[0], coeffs[1])
         
-        # Update calibration display
         slope, intercept = self.calibration_window.calibration_params
         self.calibration_window.status_label.setText(
             f'Calibration: B = {slope:.1f} * I + {intercept:.1f} (Gauss)'
         )
         
-        # Update plot
         self.calibration_window.update_plot()
         
-        # Create a test image (black background with white dots)
         img = np.zeros((480, 640, 3), dtype=np.uint8)
         center_x, center_y = 320, 240
         
-        # Add spectral lines for each test case
         test_cases = [
-            {'current': 0.5, 'radii': (50, 60, 70)},  # Inner, Center, Outer radii in pixels
+            {'current': 0.5, 'radii': (50, 60, 70)},
             {'current': 1.0, 'radii': (55, 65, 75)},
             {'current': 1.5, 'radii': (60, 70, 80)},
             {'current': 2.0, 'radii': (65, 75, 85)}
         ]
         
         for case in test_cases:
-            # Create image with spectral lines
             test_img = img.copy()
             for radius in case['radii']:
                 cv2.circle(test_img, (center_x, center_y), radius, (255, 255, 255), 2)
             
-            # Add image to the list
             self.images.append({
                 'image': test_img,
-                'mm_per_pixel': 0.1  # 0.1 mm per pixel for testing
+                'mm_per_pixel': 0.1
             })
         
-        # Set first image as current
         self.current_image_index = 0
         self.update_display()
         self.update_navigation()
         
-        # Take measurements for each test case
         for i, case in enumerate(test_cases):
-            # Set center point
             self.current_measurement = {
                 'center': QPoint(center_x, center_y),
                 'type': None,
                 'radii': {'inner': None, 'middle': None, 'outer': None}
             }
             
-            # Set radii
             self.current_measurement['radii']['inner'] = case['radii'][0]
             self.current_measurement['radii']['middle'] = case['radii'][1]
             self.current_measurement['radii']['outer'] = case['radii'][2]
             
-            # Set current value
             self.current_input.setValue(case['current'])
             
-            # Save measurement
             self.save_measurement()
             
-            # Move to next image if not last
             if i < len(test_cases) - 1:
                 self.next_image()
         
