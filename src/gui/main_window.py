@@ -17,6 +17,7 @@ from src.gui.plot_window import PlotWindow
 from src.gui.table_window import TableWindow
 from src.gui.results_window import ResultsWindow
 from src.gui.calibration_window import CalibrationWindow
+from src.processing.image_processor import ImageProcessor
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -50,8 +51,11 @@ class MainWindow(QMainWindow):
         self.current_mode = None
         self.scale_factor = 1.0
         
+        # Image Processor
+        self.image_processor = ImageProcessor()
+
         # Initialize measurement state
-        self.current_mode = None  # 'calibrate', 'center', 'inner', 'middle', 'outer'
+        self.current_mode = None  # 'calibrate', 'center', 'inner', 'middle', 'outer', 'auto_inner', 'auto_middle', 'auto_outer'
         self.calibration_points = []
         self.current_measurement = {
             'center': None,
@@ -60,6 +64,10 @@ class MainWindow(QMainWindow):
         }
         self.mm_per_pixel = None
         self.calibration_distance_mm = 10.0  # Default calibration distance
+
+        # State for auto-detection annulus definition
+        self.auto_detect_limits = {'lower': None, 'upper': None}
+        self.is_defining_annulus = False
         
         # Initialize physics measurements
         self.measurements = []  # List of ZeemanMeasurement objects
@@ -182,6 +190,22 @@ class MainWindow(QMainWindow):
         radius_layout.addWidget(middle_btn)
         radius_layout.addWidget(outer_btn)
         measurement_layout.addLayout(radius_layout)
+
+        # Auto-detection buttons
+        auto_detect_label = QLabel("Auto Detect Radii (Define Annulus):")
+        measurement_layout.addWidget(auto_detect_label)
+        auto_radius_layout = QHBoxLayout()
+        auto_inner_btn = QPushButton("Auto Detect Inner")
+        auto_inner_btn.clicked.connect(lambda: self.set_measurement_mode('auto_inner'))
+        auto_middle_btn = QPushButton("Auto Detect Middle")
+        auto_middle_btn.clicked.connect(lambda: self.set_measurement_mode('auto_middle'))
+        auto_outer_btn = QPushButton("Auto Detect Outer")
+        auto_outer_btn.clicked.connect(lambda: self.set_measurement_mode('auto_outer'))
+
+        auto_radius_layout.addWidget(auto_inner_btn)
+        auto_radius_layout.addWidget(auto_middle_btn)
+        auto_radius_layout.addWidget(auto_outer_btn)
+        measurement_layout.addLayout(auto_radius_layout)
         
         reset_btn = QPushButton("Reset Measurements")
         reset_btn.clicked.connect(self.reset_measurements)
@@ -318,20 +342,33 @@ class MainWindow(QMainWindow):
         # Draw center point and radii
         if self.current_measurement['center'] is not None:
             center = self.current_measurement['center']
-            cv2.circle(display_img, (center.x(), center.y()), 3, (255, 0, 0), -1)
+            cv2.circle(display_img, (center.x(), center.y()), 3, (255, 0, 0), -1) # Red dot for center
 
-            # Draw radii with different colors
-            colors = {
-                'inner': (255, 0, 0),   # Blue
+            # Draw manually set radii with different colors
+            manual_colors = {
+                'inner': (0, 0, 255),   # Blue
                 'middle': (0, 255, 0),  # Green
-                'outer': (0, 0, 255)    # Red
+                'outer': (255, 0, 0)    # Red
             }
             
             for radius_type, radius in self.current_measurement['radii'].items():
                 if radius is not None:
-                    color = colors.get(radius_type, (0, 0, 255))
+                    color = manual_colors.get(radius_type, (255, 255, 0)) # Default to Yellow
                     cv2.circle(display_img, (center.x(), center.y()), int(radius), color, 1)
 
+            # Draw annulus definition feedback
+            center_coords = (center.x(), center.y())
+            
+            # If both auto_detect_limits are set (e.g., after 2nd click and before processing clears them in the finally block),
+            # draw them in specified colors: Cyan for lower, Yellow for upper. This takes precedence.
+            if self.auto_detect_limits['lower'] is not None and self.auto_detect_limits['upper'] is not None:
+                cv2.circle(display_img, center_coords, int(self.auto_detect_limits['lower']), (255, 255, 0), 1) # Cyan
+                cv2.circle(display_img, center_coords, int(self.auto_detect_limits['upper']), (0, 255, 255), 1) # Yellow
+            # Else, if actively defining the annulus (is_defining_annulus is True) and only the lower limit is set,
+            # draw it in orange for active feedback.
+            elif self.is_defining_annulus and self.auto_detect_limits['lower'] is not None: # Only lower is set and we are in definition mode
+                cv2.circle(display_img, center_coords, int(self.auto_detect_limits['lower']), (255, 165, 0), 1) # Orange
+            
         # Convert to QImage and display
         height, width, channel = display_img.shape
         bytes_per_line = 3 * width
@@ -380,10 +417,13 @@ class MainWindow(QMainWindow):
     def reset_measurements(self):
         """Reset all measurements for the current image."""
         if self.current_image_index >= 0:
-            self.images[self.current_image_index]['measurement'] = None
-            self.initialize_measurement()
+            # self.images[self.current_image_index]['measurement'] = None # Keep existing measurements
+            self.initialize_measurement() # Resets current_measurement, not all image measurements
+            self.is_defining_annulus = False
+            self.auto_detect_limits = {'lower': None, 'upper': None}
+            self.current_mode = None # Stop any active measurement mode
             self.update_display()
-            self.update_measurements_display()
+            self.update_measurements_display() # Update display based on current state
     
     def get_image_coordinates(self, event_pos):
         """Convert screen coordinates to image coordinates."""
@@ -430,13 +470,101 @@ class MainWindow(QMainWindow):
         if not self.images or self.current_image_index < 0:
             return
 
-        # Convert screen coordinates to image coordinates
         pos = self.get_image_coordinates(event.pos())
         if pos is None:
             return
 
-        if self.current_mode == 'calibrate':
-            # Handle calibration point selection
+        if self.is_defining_annulus and self.current_mode and self.current_mode.startswith('auto_'):
+            if self.current_measurement['center'] is None:
+                QMessageBox.warning(self, "Error", "Please set the center point before defining an annulus.")
+                self.is_defining_annulus = False
+                self.current_mode = None
+                return
+
+            dx = pos.x() - self.current_measurement['center'].x()
+            dy = pos.y() - self.current_measurement['center'].y()
+            clicked_radius = (dx**2 + dy**2)**0.5
+
+            if self.auto_detect_limits['lower'] is None:
+                self.auto_detect_limits['lower'] = clicked_radius
+                # Optionally, update a status bar: self.statusBar().showMessage("Click to set upper annulus limit.")
+                print(f"Lower annulus limit set: {clicked_radius}") # Placeholder for status update
+            else:
+                self.auto_detect_limits['upper'] = clicked_radius
+                if self.auto_detect_limits['lower'] > self.auto_detect_limits['upper']:
+                    # Swap them
+                    self.auto_detect_limits['lower'], self.auto_detect_limits['upper'] = self.auto_detect_limits['upper'], self.auto_detect_limits['lower']
+                
+                print(f"Upper annulus limit set: {self.auto_detect_limits['upper']}. Annulus defined: {self.auto_detect_limits}") # Placeholder
+                
+                # Immediately update display to show both defined annulus limits (cyan and yellow as per update_display logic)
+                self.update_display() 
+
+                ring_type_to_update = None # Initialize for broader scope (finally block)
+                
+                # Defensive check for current_mode and extraction of ring_type_to_update
+                if self.current_mode and self.current_mode.startswith('auto_'):
+                    ring_type_to_update = self.current_mode.split('_')[1]
+                else:
+                    # This state should ideally not be reached if set_measurement_mode and other logic is correct.
+                    QMessageBox.critical(self, "Internal Error", 
+                                         f"Invalid or missing mode for detection: '{self.current_mode}'. Aborting auto-detection.")
+                    # Reset state comprehensively and exit this click handling
+                    self.current_mode = None
+                    self.auto_detect_limits = {'lower': None, 'upper': None}
+                    self.is_defining_annulus = False # Crucial: always reset this state
+                    self.update_display()
+                    self.update_measurements_display()
+                    return # Stop further processing in this click event
+
+                try:
+                    # --- START: AUTO-DETECTION LOGIC ---
+                    current_image_data = self.images[self.current_image_index]
+                    raw_rgb_image = current_image_data['image'] # This is an RGB numpy.ndarray
+
+                    self.image_processor.image = raw_rgb_image 
+                    enhanced_image_for_detection = self.image_processor.enhance_image()
+
+                    center_x = self.current_measurement['center'].x()
+                    center_y = self.current_measurement['center'].y()
+                    lower_rad = int(self.auto_detect_limits['lower'])
+                    upper_rad = int(self.auto_detect_limits['upper'])
+
+                    detected_radius_pixels = self.image_processor.detect_spectral_lines(
+                        enhanced_image_for_detection, center_x, center_y, lower_rad, upper_rad
+                    )
+
+                    if detected_radius_pixels is not None:
+                        self.current_measurement['radii'][ring_type_to_update] = detected_radius_pixels
+                        self.current_measurement['type'] = ring_type_to_update 
+                        QMessageBox.information(self, 'Success', 
+                                                f"Auto-detection successful for {ring_type_to_update} ring. Radius: {detected_radius_pixels:.2f} pixels.")
+                    else:
+                        self.current_measurement['radii'][ring_type_to_update] = None # Ensure radius is cleared
+                        QMessageBox.warning(self, 'Failure', 
+                                            f"Auto-detection failed to find a clear {ring_type_to_update} ring within the specified limits.")
+                    # --- END: AUTO-DETECTION LOGIC ---
+                except Exception as e:
+                    # Ensure radius is cleared in case of an error during processing
+                    # Use the ring_type_to_update defined before the try block
+                    if ring_type_to_update and ring_type_to_update in self.current_measurement['radii']:
+                         self.current_measurement['radii'][ring_type_to_update] = None
+                    QMessageBox.critical(self, "Processing Error", 
+                                         f"An error occurred during {ring_type_to_update} ring detection: {str(e)}")
+                finally:
+                    # Reset state variables and update UI regardless of success or failure
+                    self.current_mode = None 
+                    self.auto_detect_limits = {'lower': None, 'upper': None}
+                    self.is_defining_annulus = False # Crucial: always reset annulus definition state
+                    self.update_display() # Update display to clear annulus lines and show new radius/lack thereof
+                    self.update_measurements_display() # Update table if measurements changed
+
+            else: # This 'else' corresponds to 'if self.auto_detect_limits['lower'] is None:'
+                 # This means it's the first click for annulus definition, show orange circle
+                self.update_display()
+
+
+        elif self.current_mode == 'calibrate':
             if len(self.calibration_points) < 2:
                 self.calibration_points.append(pos)
                 
@@ -497,7 +625,28 @@ class MainWindow(QMainWindow):
     def set_measurement_mode(self, mode):
         self.current_mode = mode
         if mode == 'center':
-            self.initialize_measurement()
+            self.initialize_measurement() # Resets radii for the new center
+            self.is_defining_annulus = False # Ensure not in annulus mode
+            self.auto_detect_limits = {'lower': None, 'upper': None}
+
+        elif mode.startswith('auto_'):
+            if self.current_measurement['center'] is None:
+                QMessageBox.information(self, 'Set Center First', 
+                                        'Please set the center point before defining an annulus for auto-detection.')
+                self.current_mode = None
+                self.is_defining_annulus = False
+                return
+            
+            self.is_defining_annulus = True
+            self.auto_detect_limits = {'lower': None, 'upper': None}
+            # Optionally, update a status bar:
+            # ring_type_display = mode.split('_')[1].capitalize()
+            # self.statusBar().showMessage(f"Click to set lower annulus limit for {ring_type_display} ring.")
+            print(f"Mode set to {mode}. Click to define annulus.") # Placeholder for status update
+        else:
+            # For manual modes 'inner', 'middle', 'outer' or 'calibrate'
+            self.is_defining_annulus = False
+            self.auto_detect_limits = {'lower': None, 'upper': None}
     
     def save_measurement(self):
         """Save current measurement with B-field value."""
