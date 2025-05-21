@@ -3,9 +3,10 @@ from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QFileDialog, QScrollArea,
     QGroupBox, QMessageBox, QInputDialog, QDoubleSpinBox,
-    QTableWidget, QTableWidgetItem, QApplication, QCheckBox
+    QTableWidget, QTableWidgetItem, QApplication
 )
 from PyQt6.QtCore import Qt, QPoint, QSize
+from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence, QScreen
 from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence
 import cv2
 import numpy as np
@@ -16,7 +17,6 @@ from src.gui.plot_window import PlotWindow
 from src.gui.table_window import TableWindow
 from src.gui.results_window import ResultsWindow
 from src.gui.calibration_window import CalibrationWindow
-from src.processing.auto_detector import ZeemanRingDetector
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -170,7 +170,6 @@ class MainWindow(QMainWindow):
         center_btn.clicked.connect(lambda: self.set_measurement_mode('center'))
         measurement_layout.addWidget(center_btn)
         
-        # Measurement controls
         radius_layout = QHBoxLayout()
         inner_btn = QPushButton("Measure Inner")
         inner_btn.clicked.connect(lambda: self.set_measurement_mode('inner'))
@@ -183,28 +182,6 @@ class MainWindow(QMainWindow):
         radius_layout.addWidget(middle_btn)
         radius_layout.addWidget(outer_btn)
         measurement_layout.addLayout(radius_layout)
-        
-        # Automatic detection controls
-        auto_group = QGroupBox("Automatic Detection")
-        auto_layout = QVBoxLayout(auto_group)
-        
-        # Auto detect button
-        auto_detect_btn = QPushButton("Auto Detect Rings")
-        auto_detect_btn.clicked.connect(self.auto_detect_rings)
-        auto_layout.addWidget(auto_detect_btn)
-        
-        # Use manual measurements checkbox
-        self.use_manual_checkbox = QCheckBox("Use manual measurements as constraints")
-        self.use_manual_checkbox.setChecked(True)
-        auto_layout.addWidget(self.use_manual_checkbox)
-        
-        # Refine center checkbox
-        self.refine_center_checkbox = QCheckBox("Refine center point")
-        self.refine_center_checkbox.setChecked(True)
-        auto_layout.addWidget(self.refine_center_checkbox)
-        
-        auto_group.setLayout(auto_layout)
-        measurement_layout.addWidget(auto_group)
         
         reset_btn = QPushButton("Reset Measurements")
         reset_btn.clicked.connect(self.reset_measurements)
@@ -820,83 +797,6 @@ class MainWindow(QMainWindow):
                 
             QMessageBox.information(self, 'Success', f'Measurements exported to {file_path}')
 
-    def auto_detect_rings(self):
-        """Automatically detect the Zeeman effect rings in the current image."""
-        if not self.images or self.current_image_index < 0:
-            QMessageBox.warning(self, 'Warning', 'No image loaded')
-            return
-            
-        # Check if center point is set
-        if self.current_measurement['center'] is None:
-            QMessageBox.warning(self, 'Warning', 'Please set center point first')
-            return
-            
-        # Get current image
-        img_data = self.images[self.current_image_index]
-        image = img_data['image']
-        
-        # Get center coordinates
-        center = self.current_measurement['center']
-        center_x, center_y = center.x(), center.y()
-        
-        # Get constraints from manual measurements if checkbox is checked
-        inner_limit = None
-        middle_limit = None
-        outer_limit = None
-        
-        if self.use_manual_checkbox.isChecked():
-            if self.current_measurement['radii']['inner'] is not None:
-                inner_limit = self.current_measurement['radii']['inner']
-            if self.current_measurement['radii']['middle'] is not None:
-                middle_limit = self.current_measurement['radii']['middle']
-            if self.current_measurement['radii']['outer'] is not None:
-                outer_limit = self.current_measurement['radii']['outer']
-        
-        try:
-            # Initialize ring detector
-            detector = ZeemanRingDetector()
-            detector.load_image(image)
-            
-            # Detect rings
-            radii = detector.detect_rings(
-                center_x, 
-                center_y, 
-                inner_limit=inner_limit,
-                middle_limit=middle_limit,
-                outer_limit=outer_limit
-            )
-            
-            # Update current measurement with detected radii
-            self.current_measurement['radii']['inner'] = radii['inner']
-            self.current_measurement['radii']['middle'] = radii['middle']
-            self.current_measurement['radii']['outer'] = radii['outer']
-            
-            # Update center point if refine center is checked
-            if self.refine_center_checkbox.isChecked() and 'center_x' in radii and 'center_y' in radii:
-                refined_center = QPoint(int(radii['center_x']), int(radii['center_y']))
-                self.current_measurement['center'] = refined_center
-            
-            # Save measurement to current image
-            self.images[self.current_image_index]['measurement'] = self.current_measurement
-            
-            # Update display
-            self.update_display()
-            self.update_measurements_display()
-            
-            # Prepare message with refined center if applicable
-            center_msg = ""
-            if self.refine_center_checkbox.isChecked() and 'center_x' in radii and 'center_y' in radii:
-                center_msg = f"\nRefined center: ({radii['center_x']:.1f}, {radii['center_y']:.1f})"
-            
-            QMessageBox.information(
-                self, 
-                'Success', 
-                f'Rings detected:\nInner: {radii["inner"]:.1f} px\nMiddle: {radii["middle"]:.1f} px\nOuter: {radii["outer"]:.1f} px{center_msg}'
-            )
-            
-        except Exception as e:
-            QMessageBox.critical(self, 'Error', f'Failed to detect rings: {str(e)}')
-    
     def fill_test_data(self):
         """Fill test data for quick testing."""
         # Test data for magnetic field calibration
