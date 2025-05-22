@@ -4,8 +4,9 @@ from typing import Optional, Dict, List, Any
 import numpy as np
 
 class MeasurementController:
-    def __init__(self, main_window_instance): 
+    def __init__(self, main_window_instance, ui_manager): 
         self.mw = main_window_instance 
+        self.ui_manager = ui_manager
 
         self.current_mode: Optional[str] = None
         self.calibration_points: List[QPoint] = []
@@ -30,27 +31,35 @@ class MeasurementController:
         self.current_measurement = {
             'center': current_center, 'type': None, 'radii': {'inner': None, 'middle': None, 'outer': None}
         }
+        self.current_mode = None
+        self.auto_detect_limits = {'lower': None, 'upper': None}
+        self.is_defining_annulus = False
 
     def set_mode(self, mode: Optional[str]):
-        self.current_mode = mode
-        if mode == 'center':
-            self.initialize_for_new_measurement() 
-            self.is_defining_annulus = False
-            self.auto_detect_limits = {'lower': None, 'upper': None}
-        elif mode and mode.startswith('auto_'):
+        intended_mode = mode 
+
+        if intended_mode == 'center':
+            self.initialize_for_new_measurement()
+            self.current_mode = 'center'         
+        elif intended_mode and intended_mode.startswith('auto_'):
             if self.current_measurement.get('center') is None:
-                QMessageBox.information(self.mw, 'Set Center First', 
+                QMessageBox.information(self.mw, 'Set Center First',
                                         'Please set the center point before defining an annulus for auto-detection.')
-                self.current_mode = None 
+                self.current_mode = None
                 self.is_defining_annulus = False
-                return 
-            self.is_defining_annulus = True
-            self.auto_detect_limits = {'lower': None, 'upper': None}
-        else: 
-            self.is_defining_annulus = False
-            self.auto_detect_limits = {'lower': None, 'upper': None}
-        
-        self.mw.update_display()
+                self.auto_detect_limits = {'lower': None, 'upper': None}
+                self.mw.update_display() 
+                return
+            else:
+                self.current_mode = intended_mode
+                self.is_defining_annulus = True
+                self.auto_detect_limits = {'lower': None, 'upper': None} 
+        else:
+            self.current_mode = intended_mode
+            self.is_defining_annulus = False 
+            self.auto_detect_limits = {'lower': None, 'upper': None} 
+
+        self.mw.update_display() 
 
 
     def handle_image_click(self, pos: QPoint):
@@ -95,12 +104,16 @@ class MeasurementController:
 
                     center_search_window_size = 10  
                     
-                    detected_info = self.mw.image_processor.detect_spectral_lines(
+                    detected_info_dict = self.mw.image_processor.auto_detect_radius_refined(
                         enhanced_image, initial_center_x, initial_center_y, 
                         lower_rad, upper_rad, center_search_window_half_size=center_search_window_size)
 
-                    if detected_info:
-                        det_x, det_y, det_r = detected_info
+                    if detected_info_dict:
+                        det_x = detected_info_dict['center_x']
+                        det_y = detected_info_dict['center_y']
+                        det_r_centerline = detected_info_dict['radius_centerline']
+                        det_r = det_r_centerline 
+                        
                         original_center_qpoint = center_point
                         new_center_qpoint = QPoint(det_x, det_y)
                         

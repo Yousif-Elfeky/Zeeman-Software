@@ -102,10 +102,10 @@ The algorithm combines all quality factors into a final weight:
 # Calculate final weight as a combination of all factors
 # Adjust these coefficients to change the importance of each factor
 final_weight = (
-    0.3 * distance_weight +
-    0.4 * edge_weight +
+    0.2 * distance_weight +  # Prioritize allowing center to shift if other factors are good
+    0.5 * edge_weight +      # Prioritize strong edges more
     0.2 * completeness_weight +
-    0.1 * center_weight
+    0.1 * center_weight      # Proximity to current candidate center
 )
 
 # Store the result with its weight
@@ -128,13 +128,13 @@ if weighted_results:
 
 The algorithm evaluates circles based on four key quality factors:
 
-1. **Distance from Initial Center (30%)**: Favors circles with centers close to the manually specified point, ensuring the detection doesn't drift too far from the user's intended area.
+1. **Distance from Initial Center (20%)**: Favors circles with centers close to the manually specified point. A lower weight here allows more flexibility for the center to be adjusted if other quality factors (like edge strength) are high.
 
-2. **Edge Strength (40%)**: Measures the average intensity of pixels along the circle's edge. Stronger edges indicate a more distinct spectral line, which is given higher weight.
+2. **Edge Strength (50%)**: Measures the average intensity of pixels along the circle's edge. Stronger edges are a primary indicator of a distinct spectral line and are given the highest weight.
 
 3. **Circle Completeness (20%)**: Evaluates how much of the circle's perimeter is actually detected. More complete circles receive higher weights.
 
-4. **Center Proximity (10%)**: Considers how close the detected circle's center is to the candidate center point being evaluated.
+4. **Center Proximity (10%)**: Considers how close the detected circle's center is to the *candidate center point* currently being evaluated. This helps refine the choice among circles found from a specific candidate center.
 
 ## User Feedback
 

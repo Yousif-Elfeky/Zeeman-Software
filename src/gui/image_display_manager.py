@@ -2,13 +2,14 @@ import cv2
 import numpy as np
 from PyQt6.QtCore import Qt, QPoint
 from PyQt6.QtGui import QImage, QPixmap
-from PyQt6.QtWidgets import QLabel # QMessageBox can be added if specific errors are handled here
-from typing import Optional # For type hints
+from PyQt6.QtWidgets import QLabel 
+from typing import Optional 
 
 class ImageDisplayManager:
-    def __init__(self, image_display_label: QLabel, main_window_ref):
-        self.image_display_label = image_display_label # This is the QLabel for image
-        self.main_window = main_window_ref # Reference to MainWindow to access its state
+    def __init__(self, image_display_label: QLabel, main_window_ref, ui_manager):
+        self.image_display_label = image_display_label 
+        self.main_window = main_window_ref 
+        self.ui_manager = ui_manager
         
         self.scale_factor = 1.0
 
@@ -19,7 +20,7 @@ class ImageDisplayManager:
             scaled_height = int(q_img.height() * self.scale_factor)
             if scaled_width > 0 and scaled_height > 0:
                 q_img = q_img.scaled(scaled_width, scaled_height, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-                pass # Or log a warning
+                pass 
         
         if q_img:
             self.image_display_label.setPixmap(QPixmap.fromImage(q_img))
@@ -28,9 +29,8 @@ class ImageDisplayManager:
 
 
     def get_current_cv_image_for_display(self) -> Optional[np.ndarray]:
-        """Returns a copy of the current CV image from MainWindow's state for drawing overlays."""
         if not self.main_window.images or self.main_window.current_image_index < 0:
-            self.image_display_label.clear() # Clear display if no image
+            self.image_display_label.clear() 
             return None
         img_data = self.main_window.images[self.main_window.current_image_index]
         return img_data['image'].copy()
@@ -38,19 +38,19 @@ class ImageDisplayManager:
     def convert_cv_to_qimage(self, cv_img: np.ndarray) -> Optional[QImage]:
         if cv_img is None: return None
         
-        if cv_img.ndim == 3: # Color image
+        if cv_img.ndim == 3: 
             height, width, channel = cv_img.shape
             bytes_per_line = channel * width
-            if channel == 3: # Assuming BGR or RGB
+            if channel == 3: 
                 qformat = QImage.Format.Format_RGB888
-            else: # e.g. RGBA
-                qformat = QImage.Format.Format_RGBA8888 # Or other appropriate format
-        elif cv_img.ndim == 2: # Grayscale image
+            else: 
+                qformat = QImage.Format.Format_RGBA8888
+        elif cv_img.ndim == 2: 
             height, width = cv_img.shape
             bytes_per_line = width
             qformat = QImage.Format.Format_Grayscale8
         else:
-            return None # Unsupported image format
+            return None 
 
         return QImage(cv_img.data, width, height, bytes_per_line, qformat)
 
@@ -60,10 +60,10 @@ class ImageDisplayManager:
             self.main_window.update_navigation() 
             return
 
-        mw = self.main_window # Alias for brevity
-        mc = mw.measurement_controller # Alias for MeasurementController
+        mw = self.main_window 
+        mc = mw.measurement_controller
         
-        if mc.calibration_points: # Check if list is not empty
+        if mc.calibration_points: 
             for point in mc.calibration_points:
                 cv2.circle(display_cv_img, (point.x(), point.y()), 3, (0, 255, 0), -1)
 
@@ -80,13 +80,13 @@ class ImageDisplayManager:
                         cv2.circle(display_cv_img, center_coords, int(radius_pixels), color, 1)
             
             if mc.auto_detect_limits and mc.auto_detect_limits.get('lower') is not None and mc.auto_detect_limits.get('upper') is not None:
-                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['lower']), (255, 255, 0), 1) # Cyan
-                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['upper']), (0, 255, 255), 1)  # Yellow
+                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['lower']), (255, 255, 0), 1) 
+                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['upper']), (0, 255, 255), 1) 
             elif mc.is_defining_annulus and mc.auto_detect_limits and mc.auto_detect_limits.get('lower') is not None:
-                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['lower']), (255, 165, 0), 1) # Orange
+                cv2.circle(display_cv_img, center_coords, int(mc.auto_detect_limits['lower']), (255, 165, 0), 1) 
         
         q_img = self.convert_cv_to_qimage(display_cv_img)
-        self.update_display_pixmap(q_img) # This now handles scaling and setting pixmap
+        self.update_display_pixmap(q_img) 
         
         mw.update_navigation()
 
@@ -104,10 +104,10 @@ class ImageDisplayManager:
 
     def get_image_coordinates(self, event_pos: QPoint) -> Optional[QPoint]:
         pixmap = self.image_display_label.pixmap()
-        if not pixmap or pixmap.isNull(): return None # Check for null pixmap
+        if not pixmap or pixmap.isNull(): return None 
             
         label_size = self.image_display_label.size()
-        pixmap_size = pixmap.size() # Actual displayed pixmap size after scaling by Qt
+        pixmap_size = pixmap.size() 
         
         x_offset = (label_size.width() - pixmap_size.width()) / 2
         y_offset = (label_size.height() - pixmap_size.height()) / 2

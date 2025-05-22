@@ -26,27 +26,38 @@ The Main Window initializes the application and sets up all necessary components
 def __init__(self):
     super().__init__()
     
-    # Initialize state variables
+    # Initialize state variables for image management and calibration
     self.images = []
     self.current_image_index = -1
-    self.calibration_distance_mm = 10.0
+    self.calibration_distance_mm = 10.0 # Default known distance for calibration
+    self.measurements = [] # Stores completed MeasurementData objects
     
     # Initialize components
     self.image_processor = ImageProcessor()
+    # MeasurementController now manages all measurement-specific states like mode, current points, annulus etc.
     self.measurement_controller = MeasurementController(self)
+    self.image_display_manager = ImageDisplayManager(self.image_display, self, self.ui_manager) # Assuming image_display and ui_manager are set up in setup_ui
     
-    # Set up UI
-    self.setup_ui()
+    # Set up UI (details in setup_ui method)
+    self.ui_manager = UIManager(self)
+    self.ui_manager.setup_layout() # This will set up self.image_display etc.
     
+    # Initialize other windows (Plot, Table, Results, Calibration)
+    self.plot_window = PlotWindow(self.ui_manager)
+    self.table_window = TableWindow(self.ui_manager)
+    self.results_window = ResultsWindow(self.ui_manager)
+    self.calibration_window = CalibrationWindow(self)
+
     # Connect signals and slots
-    self.connect_signals()
+    self.connect_signals() # Placeholder for actual signal connections
 ```
 
 The initialization process:
-- Sets up state variables for images and calibration
-- Creates instances of key components like the Image Processor and Measurement Controller
-- Sets up the user interface
-- Connects signals and slots for event handling
+- Sets up state variables for managing loaded images, the current image, calibration scale, and collected measurements.
+- Creates instances of key components: `ImageProcessor` for image operations, `MeasurementController` (which now encapsulates all measurement-related state and logic), `ImageDisplayManager` for rendering, and `UIManager` for UI construction.
+- Initializes various pop-up windows for displaying plots, tables, results, and handling magnetic field calibration.
+- Sets up the user interface via the `UIManager`.
+- Connects signals and slots for event handling (specific connections are typically in `connect_signals` or UI setup).
 
 ### 2. UI Setup
 
@@ -134,28 +145,31 @@ The image management includes:
 
 ### 4. Measurement Coordination
 
-The Main Window coordinates the measurement process through the Measurement Controller:
+The Main Window coordinates the measurement process by delegating to the `MeasurementController`. It primarily acts as a passthrough for setting modes and handling image clicks, with the `MeasurementController` managing the actual state and logic.
 
 ```python
 def set_measurement_mode(self, mode):
     self.measurement_controller.set_mode(mode)
     
-    # Update status bar
-    if mode == 'center':
+    # Update status bar based on the mode set in MeasurementController
+    if self.measurement_controller.current_mode == 'center':
         self.statusBar().showMessage("Click to set center point")
-    elif mode == 'calibrate':
+    elif self.measurement_controller.current_mode == 'calibrate':
         self.statusBar().showMessage("Click to set calibration points (2 points needed)")
-    elif mode in ['inner', 'middle', 'outer']:
-        self.statusBar().showMessage(f"Click to set {mode} ring radius")
-    elif mode and mode.startswith('auto_'):
-        ring_type = mode.split('_')[1]
+    elif self.measurement_controller.current_mode in ['inner', 'middle', 'outer']:
+        self.statusBar().showMessage(f"Click to set {self.measurement_controller.current_mode} ring radius")
+    elif self.measurement_controller.current_mode and self.measurement_controller.current_mode.startswith('auto_'):
+        ring_type = self.measurement_controller.current_mode.split('_')[1]
         self.statusBar().showMessage(f"Click to define annulus for auto-detecting {ring_type} ring")
+    else:
+        self.statusBar().showMessage("Ready") # Default or cleared mode
 ```
 
 The measurement coordination includes:
-- Setting the measurement mode in the Measurement Controller
-- Updating the status bar to guide the user
-- Handling user interactions based on the current mode
+- Relaying the desired measurement mode to the `MeasurementController`.
+- The `MeasurementController` then updates its internal state (e.g., `current_mode`, `is_defining_annulus`).
+- `MainWindow` updates the status bar to guide the user based on the state now held within `MeasurementController`.
+- User interactions on the image (clicks) are passed to `MeasurementController.handle_image_click` which processes them based on its current state.
 
 ### 5. Display Update
 

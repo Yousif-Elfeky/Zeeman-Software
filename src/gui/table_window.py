@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import QMainWindow, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 class TableWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, ui_manager):
         super().__init__()
         self.setWindowTitle('Measurements Data')
         self.setGeometry(300, 300, 1000, 400)
+        self.ui_manager = ui_manager
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

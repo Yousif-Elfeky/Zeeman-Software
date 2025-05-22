@@ -1,13 +1,11 @@
 import csv
 from PyQt6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QPushButton, QLabel, QFileDialog, QScrollArea,
-    QGroupBox, QMessageBox, QInputDialog, QDoubleSpinBox,
-    QTableWidget, QTableWidgetItem, QApplication
+    QPushButton, QLabel, QFileDialog, QMessageBox, QInputDialog, QDoubleSpinBox, QApplication, QTableWidgetItem
 )
 from PyQt6.QtCore import Qt, QPoint, QSize
 from PyQt6.QtGui import QImage, QPixmap, QShortcut, QKeySequence, QScreen
-from typing import Optional 
+from typing import Optional, Dict
 import cv2
 import numpy as np
 from pathlib import Path
@@ -20,6 +18,7 @@ from src.gui.calibration_window import CalibrationWindow
 from src.processing.image_processor import ImageProcessor
 from src.gui.image_display_manager import ImageDisplayManager
 from src.gui.measurement_controller import MeasurementController
+from src.gui.ui_manager import UIManager
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -44,259 +43,30 @@ class MainWindow(QMainWindow):
         
         self.images = []  # List of loaded images with their measurements
         self.current_image_index = -1
-        self.current_measurement = None
-        self.current_mode = None
         
         self.image_processor = ImageProcessor()
 
-        self.current_mode = None  # 'calibrate', 'center', 'inner', 'middle', 'outer', 'auto_inner', 'auto_middle', 'auto_outer'
-        self.calibration_points = []
-        self.current_measurement = {
-            'center': None,
-            'type': None,
-            'radii': {'inner': None, 'middle': None, 'outer': None}
-        }
         self.mm_per_pixel = None
         self.calibration_distance_mm = 10.0  # Default calibration distance
 
-        self.auto_detect_limits = {'lower': None, 'upper': None}
-        self.is_defining_annulus = False
-        
         self.measurements = []  # List of ZeemanMeasurement objects
         
-        self.calibration_window = CalibrationWindow()
+        # Create UIManager first
+        self.ui_manager = UIManager(self)
+        self.ui_manager.setup_layout() # This creates UI elements and assigns them to self
+                                       # including plot_window, table_window, results_window,
+                                       # and self.image_display.
+ 
+        # Now initialize other components that need ui_manager or UI elements created by UIManager
+        self.calibration_window = CalibrationWindow(self.ui_manager)
+         
+        self.image_display_manager = ImageDisplayManager(self.image_display, self, self.ui_manager)
         
-        self.create_ui() # self.image_display is created in here
+        self.measurement_controller = MeasurementController(self, self.ui_manager)
 
-        self.measurement_controller = MeasurementController(self)
-
-        self.image_display_manager = ImageDisplayManager(self.image_display, self)
-
-    def _create_image_controls_group(self) -> QGroupBox:
-        image_group = QGroupBox('Image Controls')
-        image_layout = QVBoxLayout()
-
-        load_btn = QPushButton('Load Image')
-        load_btn.clicked.connect(self.load_image)
-        image_layout.addWidget(load_btn)
-
-        zoom_layout = QHBoxLayout()
-        zoom_in_btn = QPushButton('Zoom In')
-        zoom_in_btn.clicked.connect(self.zoom_in)
-        zoom_out_btn = QPushButton('Zoom Out')
-        zoom_out_btn.clicked.connect(self.zoom_out)
-        reset_view_btn = QPushButton('Reset View')
-        reset_view_btn.clicked.connect(self.reset_view)
-        
-        zoom_layout.addWidget(zoom_in_btn)
-        zoom_layout.addWidget(zoom_out_btn)
-        zoom_layout.addWidget(reset_view_btn)
-        image_layout.addLayout(zoom_layout)
-
-        image_group.setLayout(image_layout)
-        return image_group
-
-    def _create_calibration_group(self) -> QGroupBox:
-        calibration_group = QGroupBox("Calibration")
-        calibration_layout = QVBoxLayout(calibration_group)
-        
-        calibrate_btn = QPushButton("Calibrate Scale")
-        calibrate_btn.clicked.connect(lambda: self.set_measurement_mode('calibrate'))
-        calibration_layout.addWidget(calibrate_btn)
-        
-        self.calibration_label = QLabel("Scale: Not calibrated") # self.calibration_label is an attribute
-        calibration_layout.addWidget(self.calibration_label)
-        
-        return calibration_group
-
-    def _create_measurement_controls_group(self) -> QGroupBox:
-        measurement_group = QGroupBox("Measurement Controls")
-        measurement_layout = QVBoxLayout(measurement_group)
-        
-        center_btn = QPushButton("Set Center Point")
-        center_btn.clicked.connect(lambda: self.set_measurement_mode('center'))
-        measurement_layout.addWidget(center_btn)
-        
-        radius_layout = QHBoxLayout()
-        inner_btn = QPushButton("Measure Inner")
-        inner_btn.clicked.connect(lambda: self.set_measurement_mode('inner'))
-        middle_btn = QPushButton("Measure Middle")
-        middle_btn.clicked.connect(lambda: self.set_measurement_mode('middle'))
-        outer_btn = QPushButton("Measure Outer")
-        outer_btn.clicked.connect(lambda: self.set_measurement_mode('outer'))
-        
-        radius_layout.addWidget(inner_btn)
-        radius_layout.addWidget(middle_btn)
-        radius_layout.addWidget(outer_btn)
-        measurement_layout.addLayout(radius_layout)
-
-        auto_detect_label = QLabel("Auto Detect Radii (Define Annulus):")
-        measurement_layout.addWidget(auto_detect_label)
-        auto_radius_layout = QHBoxLayout()
-        auto_inner_btn = QPushButton("Auto Detect Inner")
-        auto_inner_btn.clicked.connect(lambda: self.set_measurement_mode('auto_inner'))
-        auto_middle_btn = QPushButton("Auto Detect Middle")
-        auto_middle_btn.clicked.connect(lambda: self.set_measurement_mode('auto_middle'))
-        auto_outer_btn = QPushButton("Auto Detect Outer")
-        auto_outer_btn.clicked.connect(lambda: self.set_measurement_mode('auto_outer'))
-
-        auto_radius_layout.addWidget(auto_inner_btn)
-        auto_radius_layout.addWidget(auto_middle_btn)
-        auto_radius_layout.addWidget(auto_outer_btn)
-        measurement_layout.addLayout(auto_radius_layout)
-        
-        reset_btn = QPushButton("Reset Measurements")
-        reset_btn.clicked.connect(self.reset_measurements)
-        measurement_layout.addWidget(reset_btn)
-        
-        return measurement_group
-
-    def _create_measurements_display_group(self) -> QGroupBox:
-        measurements_group = QGroupBox("Measurements")
-        measurements_layout = QVBoxLayout(measurements_group)
-        
-        self.measurements_table = QTableWidget() # self.measurements_table is an attribute
-        self.measurements_table.setColumnCount(3)
-        self.measurements_table.setHorizontalHeaderLabels(['Current (A)', 'B Field (T)', 'Actions'])
-        self.measurements_table.horizontalHeader().setStretchLastSection(True)
-        measurements_layout.addWidget(self.measurements_table)
-        
-        return measurements_group
-
-    def _create_results_group(self) -> QGroupBox:
-        results_group = QGroupBox("Results")
-        results_layout = QVBoxLayout(results_group)
-        
-        params_layout = QHBoxLayout()
-        
-        current_group = QGroupBox('Magnetic Field')
-        current_group_layout = QVBoxLayout()
-        
-        current_layout = QHBoxLayout()
-        current_label = QLabel('Current (A):')
-        self.current_input = QDoubleSpinBox() # self.current_input is an attribute
-        self.current_input.setRange(0, 100)
-        self.current_input.setDecimals(3)
-        self.current_input.setSingleStep(0.1)
-        current_layout.addWidget(current_label)
-        current_layout.addWidget(self.current_input)
-        current_group_layout.addLayout(current_layout)
-        
-        self.calibrate_btn = QPushButton('Calibrate Field') # self.calibrate_btn is an attribute
-        self.calibrate_btn.clicked.connect(self.show_calibration)
-        current_group_layout.addWidget(self.calibrate_btn)
-        
-        current_group.setLayout(current_group_layout)
-        params_layout.addWidget(current_group)
-        
-        # Wavelength input
-        wavelength_layout = QVBoxLayout()
-        wavelength_label = QLabel('Wavelength (nm):')
-        self.wavelength_input = QDoubleSpinBox() # self.wavelength_input is an attribute
-        self.wavelength_input.setRange(300, 1000)
-        self.wavelength_input.setDecimals(1)
-        self.wavelength_input.setValue(643.8)  # Default wavelength
-        wavelength_layout.addWidget(wavelength_label)
-        wavelength_layout.addWidget(self.wavelength_input)
-        params_layout.addLayout(wavelength_layout)
-        
-        results_layout.addLayout(params_layout)
-        
-        self.save_measurement_btn = QPushButton('Save Measurement') # self.save_measurement_btn is an attribute
-        self.save_measurement_btn.clicked.connect(self.save_measurement)
-        results_layout.addWidget(self.save_measurement_btn)
-        
-        buttons_layout = QHBoxLayout()
-        
-        self.calculate_btn = QPushButton('Calculate Results') # self.calculate_btn is an attribute
-        self.calculate_btn.clicked.connect(self.calculate_results)
-        buttons_layout.addWidget(self.calculate_btn)
-        
-        self.show_plot_btn = QPushButton('Show Plot') # self.show_plot_btn is an attribute
-        self.show_plot_btn.clicked.connect(self.show_plot)
-        buttons_layout.addWidget(self.show_plot_btn)
-        
-        self.show_table_btn = QPushButton('Show Data Table') # self.show_table_btn is an attribute
-        self.show_table_btn.clicked.connect(self.show_table)
-        buttons_layout.addWidget(self.show_table_btn)
-        
-        self.show_results_btn = QPushButton('Show Results') # self.show_results_btn is an attribute
-        self.show_results_btn.clicked.connect(self.show_results)
-        buttons_layout.addWidget(self.show_results_btn)
-        
-        results_layout.addLayout(buttons_layout)
-        
-        self.export_btn = QPushButton('Export to CSV') # self.export_btn is an attribute
-        self.export_btn.clicked.connect(self.export_to_csv)
-        results_layout.addWidget(self.export_btn)
-        
-        return results_group
-
-    def create_ui(self):
-        # Create central widget and main layout
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        main_layout = QVBoxLayout(central_widget)
-        
-        nav_layout = QHBoxLayout()
-        self.prev_image_btn = QPushButton('Previous Image')
-        self.prev_image_btn.clicked.connect(self.previous_image)
-        self.next_image_btn = QPushButton('Next Image')
-        self.next_image_btn.clicked.connect(self.next_image)
-        self.image_label = QLabel('No image loaded')
-        
-        nav_layout.addWidget(self.prev_image_btn)
-        nav_layout.addWidget(self.image_label)
-        nav_layout.addWidget(self.next_image_btn)
-        main_layout.addLayout(nav_layout)
-        
-        content_layout = QHBoxLayout()
-        main_layout.addLayout(content_layout)
-        
-        image_scroll = QScrollArea()
-        image_scroll.setWidgetResizable(True)
-        
-        image_container = QWidget()
-        image_container_layout = QVBoxLayout(image_container)
-        
-        self.image_display = QLabel()
-        self.image_display.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_display.mousePressEvent = self.image_clicked
-        image_container_layout.addWidget(self.image_display)
-        image_container_layout.addStretch()
-        
-        image_scroll.setWidget(image_container)
-        content_layout.addWidget(image_scroll, 60)  # 75% of width
-        content_layout.setStretch(0, 60)  # Image area stretch factor
-        
-        self.control_scroll = QScrollArea()
-        self.control_scroll.setWidgetResizable(True)
-        control_width = int(self.width() * 0.4)
-        self.control_scroll.setFixedWidth(control_width)
-        
-        control_panel = QWidget()
-        control_layout = QVBoxLayout(control_panel)
-        control_layout.setSpacing(10)
-        control_layout.setContentsMargins(10, 10, 10, 10)
-        
-        control_layout.addWidget(self._create_image_controls_group())
-        control_layout.addWidget(self._create_calibration_group())
-        control_layout.addWidget(self._create_measurement_controls_group())
-        control_layout.addWidget(self._create_measurements_display_group())
-        control_layout.addWidget(self._create_results_group())
-        
-        self.plot_window = PlotWindow()
-        self.table_window = TableWindow()
-        self.results_window = ResultsWindow()
-
-        control_layout.addStretch()
-        
-        self.control_scroll.setWidget(control_panel)
-        content_layout.addWidget(self.control_scroll, 25)  # 25% of width
-        content_layout.setStretch(1, 25)  # Control panel stretch factor
-        
-        self.setCentralWidget(central_widget)
-        
+        # Plot, Table, and Results windows are now created by UIManager and assigned to self
+        # e.g. self.plot_window, self.table_window, self.results_window
+        # Initialize navigation after UI setup
         self.update_navigation()
     
     def update_display(self):
@@ -337,11 +107,6 @@ class MainWindow(QMainWindow):
         if self.current_image_index >= 0:
             self.measurement_controller.reset_all_measurement_states()
             
-            self.current_measurement = self.measurement_controller.current_measurement
-            self.current_mode = self.measurement_controller.current_mode
-            self.is_defining_annulus = self.measurement_controller.is_defining_annulus
-            self.auto_detect_limits = self.measurement_controller.auto_detect_limits
-            
             self.update_display()
             self.update_measurements_display()
     
@@ -358,17 +123,11 @@ class MainWindow(QMainWindow):
             
         self.measurement_controller.handle_image_click(pos)
         
-        self.current_measurement = self.measurement_controller.current_measurement
-        
-        if self.current_image_index >= 0 and self.current_measurement:
-            self.images[self.current_image_index]['measurement'] = self.current_measurement
+        if self.current_image_index >= 0 and self.measurement_controller.current_measurement:
+            self.images[self.current_image_index]['measurement'] = self.measurement_controller.current_measurement.copy()
     
     def set_measurement_mode(self, mode):
         self.measurement_controller.set_mode(mode)
-        
-        self.current_mode = self.measurement_controller.current_mode
-        self.is_defining_annulus = self.measurement_controller.is_defining_annulus
-        self.auto_detect_limits = self.measurement_controller.auto_detect_limits
         
         self.update_display()
     
@@ -377,11 +136,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, 'Warning', 'No image loaded')
             return
             
-        if self.current_measurement['center'] is None:
+        current_m = self.measurement_controller.current_measurement
+        if current_m['center'] is None:
             QMessageBox.warning(self, 'Warning', 'Please set center point first')
             return
             
-        if any(v is None for v in self.current_measurement['radii'].values()):
+        if any(v is None for v in current_m['radii'].values()):
             QMessageBox.warning(self, 'Warning', 'Please measure all radii first')
             return
             
@@ -401,9 +161,9 @@ class MainWindow(QMainWindow):
             
         measurement = ZeemanMeasurement(
             B_field=magnetic_field,
-            R_center=self.current_measurement['radii']['middle'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['middle'] is not None else None,
-            R_inner=self.current_measurement['radii']['inner'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['inner'] is not None else None,
-            R_outer=self.current_measurement['radii']['outer'] * current_data['mm_per_pixel'] if self.current_measurement['radii']['outer'] is not None else None,
+            R_center=current_m['radii']['middle'] * current_data['mm_per_pixel'] if current_m['radii']['middle'] is not None else None,
+            R_inner=current_m['radii']['inner'] * current_data['mm_per_pixel'] if current_m['radii']['inner'] is not None else None,
+            R_outer=current_m['radii']['outer'] * current_data['mm_per_pixel'] if current_m['radii']['outer'] is not None else None,
             wavelength=self.wavelength_input.value() * 1e-9  # Convert nm to m
         )
         
@@ -413,11 +173,8 @@ class MainWindow(QMainWindow):
         
         self.table_window.update_table(self.measurements)
         
-        self.current_measurement = {
-            'center': None,
-            'type': None,
-            'radii': {'inner': None, 'middle': None, 'outer': None}
-        }
+        # Reset the measurement state in the controller
+        self.measurement_controller.initialize_for_new_measurement() # Or a more specific reset method
         self.update_display()
         self.update_measurements_display()
     
@@ -452,7 +209,7 @@ class MainWindow(QMainWindow):
             self.current_image_index += 1
             self.initialize_measurement()
             if hasattr(self, 'image_display_manager'):
-                self.image_display_manager.scale_factor = 1.0 # Reset zoom
+                self.image_display_manager.scale_factor = 1.0
             self.update_display()
             self.update_navigation()
             self.update_measurements_display()
@@ -460,7 +217,7 @@ class MainWindow(QMainWindow):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         if hasattr(self, 'control_scroll'):
-            control_width = int(self.width() * 0.25)
+            control_width = int(self.width() * 0.25) 
             self.control_scroll.setFixedWidth(control_width)
         self.update_display()
     
@@ -475,8 +232,6 @@ class MainWindow(QMainWindow):
     
     def initialize_measurement(self):
         self.measurement_controller.initialize_for_new_measurement()
-        
-        self.current_measurement = self.measurement_controller.current_measurement
     
     def zoom_in(self):
         self.image_display_manager.zoom_in()
@@ -564,8 +319,8 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        L = 150  # Distance in mm
-        n = 1.46  # Refractive index
+        L = 150  
+        n = 1.46 
         
         with open(file_path, 'w', newline='') as f:
             writer = csv.writer(f, delimiter='\t')
@@ -580,11 +335,11 @@ class MainWindow(QMainWindow):
             ])
             
             for m in self.measurements:
-                B_field = m.B_field * 1e4  # Convert T to G
+                B_field = m.B_field * 1e4 
                 
                 try:
                     slope, intercept = self.calibration_window.calibration_params
-                    current = (B_field - intercept) / slope  # Inverse of B = slope * I + intercept
+                    current = (B_field - intercept) / slope  
                 except (AttributeError, TypeError):
                     QMessageBox.warning(self, 'Warning', 'Please calibrate the magnetic field first')
                     return
@@ -677,21 +432,25 @@ class MainWindow(QMainWindow):
         self.update_navigation()
         
         for i, case in enumerate(test_cases):
-            self.current_measurement = {
+            # Directly interact with MeasurementController's state for test setup
+            self.measurement_controller.current_measurement = {
                 'center': QPoint(center_x, center_y),
-                'type': None,
-                'radii': {'inner': None, 'middle': None, 'outer': None}
+                'type': None, # Or a specific type if relevant for the test
+                'radii': {
+                    'inner': case['radii'][0],
+                    'middle': case['radii'][1],
+                    'outer': case['radii'][2]
+                }
             }
-            
-            self.current_measurement['radii']['inner'] = case['radii'][0]
-            self.current_measurement['radii']['middle'] = case['radii'][1]
-            self.current_measurement['radii']['outer'] = case['radii'][2]
             
             self.current_input.setValue(case['current'])
             
-            self.save_measurement()
+            self.save_measurement() # save_measurement now uses controller's state
             
             if i < len(test_cases) - 1:
                 self.next_image()
+        
+        if self.measurements:
+            self.plot_window.plot_data(self.measurements)
         
         QMessageBox.information(self, 'Success', 'Test data has been loaded. Press Ctrl+S to save measurements.')

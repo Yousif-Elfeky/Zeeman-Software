@@ -139,10 +139,10 @@ def detect_spectral_lines(self, processed_image: np.ndarray, initial_center_x: i
                 
                 # Calculate final weight
                 final_weight = (
-                    0.3 * distance_weight +
-                    0.4 * edge_weight +
+                    0.2 * distance_weight +  # Prioritize allowing center to shift
+                    0.5 * edge_weight +      # Prioritize strong edges more
                     0.2 * completeness_weight +
-                    0.1 * center_weight
+                    0.1 * center_weight      # Proximity to candidate center
                 )
                 
                 circle_key = (int(round(x)), int(round(y)), int(round(r)))
@@ -164,8 +164,8 @@ The spectral line detection algorithm consists of several key steps:
    - Creates an annular mask to focus detection on the specified radius range
    - Applies OpenCV's HoughCircles algorithm to detect circles
 4. **Quality Evaluation**: For each detected circle:
-   - Calculates distance from the initial center (30% weight)
-   - Measures edge strength along the circle (40% weight)
+   - Calculates distance from the initial center (20% weight)
+   - Measures edge strength along the circle (50% weight)
    - Evaluates circle completeness (20% weight)
    - Considers proximity to the candidate center (10% weight)
 5. **Optimal Selection**: Selects the circle with the highest overall quality score
@@ -174,13 +174,13 @@ The spectral line detection algorithm consists of several key steps:
 
 The algorithm evaluates circles based on four key quality factors:
 
-1. **Distance from Initial Center (30%)**: Favors circles with centers close to the manually specified point, ensuring the detection doesn't drift too far from the user's intended area.
+1. **Distance from Initial Center (20%)**: Favors circles with centers close to the manually specified point. A lower weight here allows more flexibility for the center to be adjusted if other quality factors (like edge strength) are high.
 
-2. **Edge Strength (40%)**: Measures the average intensity of pixels along the circle's edge. Stronger edges indicate a more distinct spectral line, which is given higher weight.
+2. **Edge Strength (50%)**: Measures the average intensity of pixels along the circle's edge. Stronger edges are a primary indicator of a distinct spectral line and are given the highest weight.
 
 3. **Circle Completeness (20%)**: Evaluates how much of the circle's perimeter is actually detected. More complete circles receive higher weights.
 
-4. **Center Proximity (10%)**: Considers how close the detected circle's center is to the candidate center point being evaluated.
+4. **Center Proximity (10%)**: Considers how close the detected circle's center is to the *candidate center point* currently being evaluated. This helps refine the choice among circles found from a specific candidate center.
 
 ## Integration with the Measurement Workflow
 

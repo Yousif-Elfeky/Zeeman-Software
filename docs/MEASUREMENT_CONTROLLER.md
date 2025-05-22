@@ -44,10 +44,15 @@ def reset_all_measurement_states(self):
     self.is_defining_annulus = False
 
 def initialize_for_new_measurement(self):
+    # Preserves the center point if already set, resets other measurement details.
+    # Also resets the current mode and any auto-detection states (annulus).
     current_center = self.current_measurement.get('center') 
     self.current_measurement = {
         'center': current_center, 'type': None, 'radii': {'inner': None, 'middle': None, 'outer': None}
     }
+    self.current_mode = None
+    self.auto_detect_limits = {'lower': None, 'upper': None}
+    self.is_defining_annulus = False
 ```
 
 The state management includes:

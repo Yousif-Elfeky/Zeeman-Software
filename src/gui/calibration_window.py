@@ -6,13 +6,14 @@ from matplotlib.figure import Figure
 import numpy as np
 
 class CalibrationWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, ui_manager):
         super().__init__()
         self.setWindowTitle('Magnetic Field Calibration')
         self.setGeometry(500, 200, 800, 600)
+        self.ui_manager = ui_manager
         
-        self.calibration_points = []  # List of (current, field) tuples
-        self.calibration_params = None  # Will store (slope, intercept)
+        self.calibration_points = []  
+        self.calibration_params = None
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)

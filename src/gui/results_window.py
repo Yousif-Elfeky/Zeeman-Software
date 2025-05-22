@@ -3,10 +3,11 @@ from PyQt6.QtWidgets import (QMainWindow, QLabel, QVBoxLayout, QWidget, QScrollA
 from PyQt6.QtCore import Qt
 
 class ResultsWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, ui_manager):
         super().__init__()
         self.setWindowTitle('Zeeman Effect Results')
         self.setGeometry(400, 400, 600, 400)
+        self.ui_manager = ui_manager
         
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
