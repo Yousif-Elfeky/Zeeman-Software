@@ -9,7 +9,7 @@ class ImageProcessor:
     
     def enhance_image(self):
         if self.image is None:
-            raise ValueError("No image loaded. Set self.image before calling enhance_image.")
+            raise ValueError("No image loaded.")
         
         gray = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
         
@@ -29,7 +29,6 @@ class ImageProcessor:
         
         half_width = radial_search_width / 2.0
         r_scan_start = max(0.0, r_center_estimate - half_width)
-        # Ensure r_scan_end does not exceed image boundaries (half diagonal for safety)
         r_scan_end = min(float(min(height, width) / 2.0 - 1.0), r_center_estimate + half_width)
 
         if r_scan_start >= r_scan_end: 
@@ -184,9 +183,9 @@ class ImageProcessor:
             return {
                 'center_x': final_center_x,
                 'center_y': final_center_y,
-                'radius_centerline': best_circle_r, # Radius from Hough
-                'radius_inner': r_inner,          # From analyze_ring_boundaries
-                'radius_outer': r_outer,          # From analyze_ring_boundaries
+                'radius_centerline': best_circle_r, # Radius from Houg
+                'radius_inner': r_inner,          
+                'radius_outer': r_outer,          
                 'weight': best_circle_weight
             }
          

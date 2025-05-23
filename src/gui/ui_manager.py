@@ -69,7 +69,7 @@ class UIManager:
         radius_layout.addWidget(outer_btn)
         measurement_layout.addLayout(radius_layout)
 
-        auto_detect_label = QLabel("Auto Detect Radii (Define Annulus):")
+        auto_detect_label = QLabel("Auto Detect Radii (Define Min and Max Radii):")
         measurement_layout.addWidget(auto_detect_label)
         auto_radius_layout = QHBoxLayout()
         auto_inner_btn = QPushButton("Auto Detect Inner")
@@ -197,17 +197,17 @@ class UIManager:
         image_container_layout.addWidget(self.mw.image_display)
         image_container_layout.addStretch()
         image_scroll.setWidget(image_container)
-        content_layout.addWidget(image_scroll, 75) 
+        content_layout.addWidget(image_scroll, 80) 
         
         self.mw.control_scroll = QScrollArea()
         self.mw.control_scroll.setWidgetResizable(True)
-        control_width = int(self.mw.width() * 0.25) # Initial width based on 25%
+        control_width = int(self.mw.width() * 0.2) # Initial width based on 20%
         self.mw.control_scroll.setFixedWidth(control_width)
         
         control_panel = QWidget()
         control_layout = QVBoxLayout(control_panel)
-        control_layout.setSpacing(10)
-        control_layout.setContentsMargins(10, 10, 10, 10)
+        control_layout.setSpacing(5)
+        control_layout.setContentsMargins(5, 5, 5, 5)
         
         control_layout.addWidget(self._create_image_controls_group())
         control_layout.addWidget(self._create_calibration_group())
@@ -217,7 +217,7 @@ class UIManager:
         control_layout.addStretch()
         
         self.mw.control_scroll.setWidget(control_panel)
-        content_layout.addWidget(self.mw.control_scroll, 25)
+        content_layout.addWidget(self.mw.control_scroll, 20)
         
         self.mw.plot_window = PlotWindow(self)
         self.mw.table_window = TableWindow(self)

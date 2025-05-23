@@ -47,26 +47,18 @@ class MainWindow(QMainWindow):
         self.image_processor = ImageProcessor()
 
         self.mm_per_pixel = None
-        self.calibration_distance_mm = 10.0  # Default calibration distance
+        self.calibration_distance_mm = 2.0  
 
-        self.measurements = []  # List of ZeemanMeasurement objects
+        self.measurements = []  
         
-        # Create UIManager first
         self.ui_manager = UIManager(self)
-        self.ui_manager.setup_layout() # This creates UI elements and assigns them to self
-                                       # including plot_window, table_window, results_window,
-                                       # and self.image_display.
- 
-        # Now initialize other components that need ui_manager or UI elements created by UIManager
+        self.ui_manager.setup_layout() 
         self.calibration_window = CalibrationWindow(self.ui_manager)
          
         self.image_display_manager = ImageDisplayManager(self.image_display, self, self.ui_manager)
         
         self.measurement_controller = MeasurementController(self, self.ui_manager)
 
-        # Plot, Table, and Results windows are now created by UIManager and assigned to self
-        # e.g. self.plot_window, self.table_window, self.results_window
-        # Initialize navigation after UI setup
         self.update_navigation()
     
     def update_display(self):
@@ -97,8 +89,8 @@ class MainWindow(QMainWindow):
             
             self.current_image_index = len(self.images) - 1
             self.initialize_measurement()
-            if hasattr(self, 'image_display_manager'): # Ensure manager exists
-                self.image_display_manager.scale_factor = 1.0 # Reset zoom
+            if hasattr(self, 'image_display_manager'): 
+                self.image_display_manager.scale_factor = 1.0 
             self.update_display()
             self.update_navigation()
             self.update_measurements_display()
